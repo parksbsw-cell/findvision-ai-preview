@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -10,6 +11,16 @@ import requests
 import streamlit as st
 from streamlit_cookies_controller import CookieController
 
+from preview_logic import (
+    analysis_message,
+    category_text,
+    image_mime,
+    known_appearance_count,
+    missing_recommended,
+    safe_count,
+    verification_result,
+    visual_facts,
+)
 
 # =========================================================
 # 기본 설정
@@ -28,6 +39,11 @@ IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
 VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
 MAX_ATTEMPTS = 3
+FAST_ATTEMPTS = 1
+FAST_WIDTH = 512
+FAST_HEIGHT = 768
+DETAILED_WIDTH = 768
+DETAILED_HEIGHT = 1024
 
 FIELDS = [
     "name",
@@ -40,11 +56,19 @@ FIELDS = [
     "hair_color",
     "hair_length",
     "hair_texture",
+    "hair_style",
     "top",
+    "top_brand",
+    "outerwear",
+    "outerwear_brand",
+    "outerwear_closure",
     "bottom",
+    "bottom_brand",
     "shoes",
+    "shoes_brand",
     "hat_type",
     "hat_color",
+    "hat_brand",
     "glasses",
     "facial_hair",
     "accessories",
@@ -52,22 +76,8 @@ FIELDS = [
     "image_prompt_en",
     "verification_requirements_en",
     "ambiguity_notes",
-]
-
-APPEARANCE_FIELDS = [
-    "skin_tone",
-    "hair_color",
-    "hair_length",
-    "hair_texture",
-    "top",
-    "bottom",
-    "shoes",
-    "hat_type",
-    "hat_color",
-    "glasses",
-    "facial_hair",
-    "accessories",
-    "special_features",
+    "last_seen_location",
+    "alert_area",
 ]
 
 LABELS = {
@@ -81,21 +91,32 @@ LABELS = {
     "hair_color": "머리색",
     "hair_length": "머리 길이",
     "hair_texture": "머리 형태",
+    "hair_style": "머리 스타일",
     "top": "상의",
+    "top_brand": "상의 브랜드",
+    "outerwear": "외투·겉옷",
+    "outerwear_brand": "겉옷 브랜드",
+    "outerwear_closure": "겉옷 여밈",
     "bottom": "하의",
+    "bottom_brand": "하의 브랜드",
     "shoes": "신발",
+    "shoes_brand": "신발 브랜드",
     "hat_type": "모자 종류",
     "hat_color": "모자 색상",
+    "hat_brand": "모자 브랜드",
     "glasses": "안경",
     "facial_hair": "수염",
     "accessories": "소지품·액세서리",
     "special_features": "기타 특징",
+    "last_seen_location": "마지막 목격 위치",
+    "alert_area": "재난문자 발송 지역",
 }
 
 
 # =========================================================
 # Cloudflare API
 # =========================================================
+
 
 def get_secret(name: str) -> str:
     try:
@@ -109,10 +130,7 @@ def cf_url(model: str) -> str:
     account_id = get_secret("CLOUDFLARE_ACCOUNT_ID")
     if not account_id:
         raise RuntimeError("Cloudflare Account ID가 설정되어 있지 않습니다.")
-    return (
-        f"https://api.cloudflare.com/client/v4/accounts/"
-        f"{account_id}/ai/run/{model}"
-    )
+    return f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
 
 
 def auth_header() -> dict:
@@ -147,8 +165,7 @@ def cloudflare_json_request(model: str, payload: dict, timeout: int = 120) -> An
         errors = data.get("errors") or []
         message = errors[0].get("message") if errors else str(data)
         raise RuntimeError(
-            f"Cloudflare AI 요청 실패 [{model}] "
-            f"(HTTP {response.status_code}): {message}"
+            f"Cloudflare AI 요청 실패 [{model}] (HTTP {response.status_code}): {message}"
         )
 
     return data.get("result")
@@ -156,10 +173,7 @@ def cloudflare_json_request(model: str, payload: dict, timeout: int = 120) -> An
 
 def cloudflare_multipart_request(model: str, fields: dict, timeout: int = 180) -> Any:
     # requests의 files 형식을 사용하면 multipart/form-data boundary가 자동 생성된다.
-    multipart = {
-        key: (None, str(value))
-        for key, value in fields.items()
-    }
+    multipart = {key: (None, str(value)) for key, value in fields.items()}
 
     response = requests.post(
         cf_url(model),
@@ -179,8 +193,7 @@ def cloudflare_multipart_request(model: str, fields: dict, timeout: int = 180) -
         errors = data.get("errors") or []
         message = errors[0].get("message") if errors else str(data)
         raise RuntimeError(
-            f"Cloudflare AI 요청 실패 [{model}] "
-            f"(HTTP {response.status_code}): {message}"
+            f"Cloudflare AI 요청 실패 [{model}] (HTTP {response.status_code}): {message}"
         )
 
     return data.get("result")
@@ -190,7 +203,8 @@ def cloudflare_multipart_request(model: str, fields: dict, timeout: int = 180) -
 # 재난문자 분석
 # =========================================================
 
-def extract_features(message: str) -> dict:
+
+def extract_features(original: str, details: str) -> dict:
     schema = {
         "type": "object",
         "properties": {key: {"type": "string"} for key in FIELDS},
@@ -199,13 +213,16 @@ def extract_features(message: str) -> dict:
     }
 
     system_prompt = """
-너는 대한민국 실종 재난문자의 인상착의 사실 추출기다.
+너는 실종 재난문자의 인상착의 사실 추출기다. 원문과 사용자가 추가한 상세 설명을 구분한다.
 
 절대 원칙:
 - 원문에 실제로 있는 정보만 사용한다.
 - 없는 정보는 빈 문자열("")로 둔다.
 - 모호한 정보를 추측하지 않는다.
 - 이름만 보고 국적, 피부톤, 머리 특징을 추측하지 않는다.
+- 원문과 추가 설명이 충돌하면 사용자가 명시한 추가 설명을 우선하고 ambiguity_notes에 충돌을 기록한다.
+- 옷·모자·신발 브랜드, 머리 스타일은 명시된 경우에만 기입한다. 없으면 빈 문자열로 둔다.
+- last_seen_location은 마지막 목격 장소, alert_area는 재난문자 발송 지역이다. 장소를 외형으로 해석하지 않는다.
 
 한국어 필드 작성 규칙:
 1. "검은색 모자" -> hat_type="모자(종류 불명)", hat_color="검은색"
@@ -213,15 +230,19 @@ def extract_features(message: str) -> dict:
 3. "검은색 바지" -> bottom="검은색 바지". 긴바지/반바지를 추측하지 않는다.
 4. 피부톤, 곱슬/직모, 수염, 안경 등은 명시된 경우만 적는다.
 5. ambiguity_notes에는 구체적으로 정할 수 없는 부분을 한국어로 적는다.
+6. 티셔츠·셔츠·니트는 top, 자켓·점퍼·코트·바람막이·후드집업·패딩·외투는 outerwear로 분리한다.
+7. 겉옷이 열려 있는지 닫혀 있는지 명시된 경우 outerwear_closure에 적고, 없으면 빈 문자열이다.
+8. 겉옷이 있더라도 top을 삭제하지 않는다. 단, 겉옷 안의 상의가 명시되지 않았으면 top은 비운다.
 
 image_prompt_en 규칙:
 - 반드시 자연스럽고 정확한 영어로 작성한다.
 - 원문에 있는 사실만 포함한다.
 - 현대의 일상복 기준으로 표현한다.
 - 실제 얼굴 생김새를 창작하지 않는다.
-- 예: "68-year-old Korean man, dark skin tone, short black curly hair,
-  wearing a gray baseball cap, red short-sleeve T-shirt,
-  black long pants, and black Crocs."
+- 국적이 없는 경우 특정 국적을 추가하지 않는다.
+- 겉옷은 상의 위에 겹쳐 입는 레이어로 명확하게 기술한다.
+- 겉옷이 닫혀 있다면 안의 상의가 보인다고 강요하지 않는다.
+- 브랜드 이름은 명시된 경우 의류 디자인 설명에만 사용하고 로고·문자를 생성하라고 요구하지 않는다.
 
 verification_requirements_en 규칙:
 - 이미지에서 반드시 확인해야 할 명시된 인상착의만 영어로 적는다.
@@ -229,6 +250,9 @@ verification_requirements_en 규칙:
 - 예: "gray baseball cap; red short-sleeve T-shirt;
   black long pants; black Crocs; short black curly hair"
 - 원문에 없는 특징은 절대로 추가하지 않는다.
+- 겉옷 색·종류·여밈을 반드시 포함한다.
+- 닫힌 겉옷에 가려진 안쪽 상의는 시각 검수 필수 조건에 넣지 않는다.
+- 위치·이름은 이미지 검수 조건에 넣지 않는다.
 """.strip()
 
     result = cloudflare_json_request(
@@ -238,14 +262,11 @@ verification_requirements_en 규칙:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": (
-                        "다음 실종 재난문자를 정확히 분석해 주세요.\n\n"
-                        f"{message}"
-                    ),
+                    "content": analysis_message(original, details),
                 },
             ],
             "temperature": 0.0,
-            "max_tokens": 1400,
+            "max_tokens": 1800,
             "stream": False,
             "response_format": {
                 "type": "json_schema",
@@ -262,49 +283,33 @@ verification_requirements_en 규칙:
     if not isinstance(parsed, dict):
         raise RuntimeError("AI 분석 결과가 올바른 형식이 아닙니다.")
 
-    return {
-        key: str(parsed.get(key, "") or "").strip()
-        for key in FIELDS
-    }
+    return {key: str(parsed.get(key, "") or "").strip() for key in FIELDS}
 
 
 # =========================================================
 # 기본 인물 설정 / 상세도 검사
 # =========================================================
 
+
 def get_origin(features: dict) -> tuple[str, str]:
     nationality = features.get("nationality", "").strip()
     if nationality:
         return nationality, nationality
-    return "한국인", "Korean"
+    return "국적 정보 없음", ""
 
 
 def get_known_appearance_count(features: dict) -> int:
-    return sum(
-        1
-        for key in APPEARANCE_FIELDS
-        if features.get(key, "").strip()
-    )
+    return known_appearance_count(features)
 
 
 def get_missing_recommended(features: dict) -> list[str]:
-    recommended = [
-        ("top", "상의"),
-        ("bottom", "하의"),
-        ("shoes", "신발"),
-        ("hair_texture", "머리 형태"),
-        ("skin_tone", "피부톤"),
-    ]
-    return [
-        label
-        for key, label in recommended
-        if not features.get(key, "").strip()
-    ]
+    return missing_recommended(features)
 
 
 # =========================================================
 # 이미지 생성
 # =========================================================
+
 
 def build_generation_prompt(
     features: dict,
@@ -329,13 +334,24 @@ Do not change any requirement that was already correct.
 """.strip()
 
     prompt = f"""
-Create a PHOTOREALISTIC full-body reference photograph of exactly ONE {origin_en} person.
+Create a PHOTOREALISTIC full-body reference photograph of exactly ONE person.
+{f"Explicit nationality: {origin_en}." if origin_en else "Nationality is unspecified; do not assume one."}
 
 PERSON DESCRIPTION:
 {description}
 
 MANDATORY VISIBLE REQUIREMENTS:
 {requirements}
+
+SOURCE-OF-TRUTH APPEARANCE CATEGORIES:
+{json.dumps(visual_facts(features), ensure_ascii=False)}
+
+CLOTHING LAYERS:
+- Outerwear is a separate garment worn OVER the inner top, never a replacement for pants or shoes.
+- Show the outerwear color and type clearly. If it is open, show the stated inner top as well.
+- If outerwear is closed, do not falsely expose a fully visible inner top.
+- If only outerwear is specified, do not invent an inner top as a matching condition.
+- A stated brand should guide garment style only; never render brand text or logos.
 
 STYLE AND COMPOSITION:
 - realistic contemporary everyday person
@@ -347,11 +363,7 @@ STYLE AND COMPOSITION:
 - neutral documentary/reference-photo appearance
 
 STRICT PROHIBITIONS:
-- NO traditional clothing unless explicitly stated
-- NO hanbok
-- NO kimono
-- NO historical robes
-- NO ceremonial clothing
+- NO traditional, historical or ceremonial clothing unless explicitly stated
 - NO fantasy clothing
 - NO wizard clothing
 - NO conical fantasy hat
@@ -386,14 +398,14 @@ ACCURACY RULES:
     return prompt[:3500]
 
 
-def generate_image(prompt: str) -> tuple[bytes, str]:
+def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, str]:
     # FLUX.2 Klein은 REST API에서 multipart/form-data 사용
     result = cloudflare_multipart_request(
         IMAGE_MODEL,
         {
             "prompt": prompt,
-            "width": 768,
-            "height": 1024,
+            "width": width,
+            "height": height,
             # 값이 높을수록 프롬프트를 더 강하게 따르도록 유도
             "guidance": 4.0,
         },
@@ -403,12 +415,14 @@ def generate_image(prompt: str) -> tuple[bytes, str]:
         raise RuntimeError("이미지 생성 결과를 받지 못했습니다.")
 
     image_b64 = result["image"]
-    return base64.b64decode(image_b64), image_b64
+    image_bytes = base64.b64decode(image_b64)
+    return image_bytes, image_b64, image_mime(image_bytes)
 
 
 # =========================================================
 # Vision AI 검수
 # =========================================================
+
 
 def extract_text_from_result(result: Any) -> str:
     if isinstance(result, str):
@@ -423,8 +437,9 @@ def extract_text_from_result(result: Any) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def moondream_query(image_b64: str, question: str) -> str:
-    data_uri = f"data:image/jpeg;base64,{image_b64}"
+def moondream_query(image_b64: str, mime_type: str, question: str) -> str:
+    safe_mime = mime_type if mime_type.startswith("image/") else "image/jpeg"
+    data_uri = f"data:{safe_mime};base64,{image_b64}"
 
     result = cloudflare_json_request(
         VISION_MODEL,
@@ -466,8 +481,9 @@ def parse_json_loose(text: str) -> dict:
     return {}
 
 
-def verify_image(image_b64: str, features: dict) -> dict:
+def verify_image(image_b64: str, mime_type: str, features: dict) -> dict:
     requirements = features.get("verification_requirements_en", "").strip()
+    structured_facts = json.dumps(visual_facts(features), ensure_ascii=False)
 
     question = f"""
 Carefully verify this generated full-body reference image.
@@ -475,12 +491,21 @@ Carefully verify this generated full-body reference image.
 EXPLICIT REQUIRED FACTS:
 {requirements}
 
+USER-SUPPLIED STRUCTURED APPEARANCE FACTS (source of truth):
+{structured_facts}
+
+The outerwear must be visibly worn over the inner top, not omitted or merged into it.
+If outerwear is closed, do not demand that its covered inner top be fully visible.
+Never verify a brand by assuming a logo must appear.
+Name and location are context, not visual appearance requirements.
+
 Only evaluate facts explicitly listed above.
 Do not penalize unspecified face details.
 
 Reject the image if:
 - any required clothing color is wrong
 - any required clothing type is wrong
+- required outerwear type/color/layer is wrong or missing
 - required shoes are wrong
 - required hat type/color is wrong
 - specified hair or skin characteristics are wrong
@@ -499,11 +524,12 @@ Return JSON ONLY:
   "feedback_en": ""
 }}
 
-score must be an integer from 0 to 100.
+score must be an integer from 0 to 100. Set pass=true only for score >= 80
+with no missing or wrong visible requirements.
 feedback_en must tell the image generator exactly what to correct.
 """.strip()
 
-    raw = moondream_query(image_b64, question)
+    raw = moondream_query(image_b64, mime_type, question)
     parsed = parse_json_loose(raw)
 
     if not parsed:
@@ -520,53 +546,17 @@ feedback_en must tell the image generator exactly what to correct.
             "raw": raw,
         }
 
-    try:
-        score = int(parsed.get("score", 0))
-    except Exception:
-        score = 0
-
-    missing = parsed.get("missing", [])
-    wrong = parsed.get("wrong", [])
-
-    if not isinstance(missing, list):
-        missing = [str(missing)]
-
-    if not isinstance(wrong, list):
-        wrong = [str(wrong)]
-
-    has_text = bool(parsed.get("has_text", False))
-
-    if has_text:
-        wrong.append("이미지 안에 글자가 있음")
-
-    passed = (
-        bool(parsed.get("pass", False))
-        and not missing
-        and not wrong
-        and not has_text
-    )
-
-    return {
-        "score": max(0, min(score, 100)),
-        "pass": passed,
-        "missing": missing,
-        "wrong": wrong,
-        "has_text": has_text,
-        "feedback_en": str(parsed.get("feedback_en", "") or "").strip(),
-        "raw": raw,
-    }
-
+    return verification_result(parsed, raw)
 
 
 # =========================================================
 # 익명 사용 통계 / Supabase
 # =========================================================
 
+
 def analytics_enabled() -> bool:
-    return bool(
-        get_secret("SUPABASE_URL")
-        and (get_secret("SUPABASE_SECRET_KEY") or get_secret("SUPABASE_KEY"))
-    )
+    # The copy must never mix experiments with the original site's Supabase metrics.
+    return False
 
 
 def supabase_key() -> str:
@@ -664,8 +654,7 @@ def fetch_analytics_events(max_rows: int = 10000) -> list:
             },
             params={
                 "select": (
-                    "user_id,event_type,created_at,"
-                    "verification_pass,verification_score,attempts"
+                    "user_id,event_type,created_at,verification_pass,verification_score,attempts"
                 ),
                 "order": "created_at.asc",
             },
@@ -697,10 +686,7 @@ def parse_created_at(value: str):
 
 
 def calculate_analytics(rows: list) -> dict:
-    generations = [
-        row for row in rows
-        if row.get("event_type") == "image_generated"
-    ]
+    generations = [row for row in rows if row.get("event_type") == "image_generated"]
 
     now = datetime.now(timezone.utc)
     seven_days_ago = now - timedelta(days=7)
@@ -724,43 +710,23 @@ def calculate_analytics(rows: list) -> dict:
             weekly_users.add(user_id)
             weekly_usage_dates.setdefault(user_id, set()).add(created_at.date())
 
-    returning_users = {
-        user_id
-        for user_id, dates in usage_dates.items()
-        if len(dates) >= 2
-    }
+    returning_users = {user_id for user_id, dates in usage_dates.items() if len(dates) >= 2}
 
     weekly_returning_users = {
-        user_id
-        for user_id, dates in weekly_usage_dates.items()
-        if len(dates) >= 2
+        user_id for user_id, dates in weekly_usage_dates.items() if len(dates) >= 2
     }
 
-    verification_rows = [
-        row for row in generations
-        if row.get("verification_pass") is not None
-    ]
+    verification_rows = [row for row in generations if row.get("verification_pass") is not None]
 
-    passed = sum(
-        1 for row in verification_rows
-        if row.get("verification_pass") is True
-    )
+    passed = sum(1 for row in verification_rows if row.get("verification_pass") is True)
 
-    pass_rate = (
-        100.0 * passed / len(verification_rows)
-        if verification_rows else 0.0
-    )
+    pass_rate = 100.0 * passed / len(verification_rows) if verification_rows else 0.0
 
     attempts_values = [
-        int(row["attempts"])
-        for row in generations
-        if row.get("attempts") is not None
+        int(row["attempts"]) for row in generations if row.get("attempts") is not None
     ]
 
-    avg_attempts = (
-        sum(attempts_values) / len(attempts_values)
-        if attempts_values else 0.0
-    )
+    avg_attempts = sum(attempts_values) / len(attempts_values) if attempts_values else 0.0
 
     return {
         "total_users": len(all_users),
@@ -777,9 +743,7 @@ def show_admin_analytics() -> None:
     st.subheader("📊 ClueSight 서비스 사용 지표")
 
     if not analytics_enabled():
-        st.info(
-            "Supabase 통계 DB를 연결하면 사용 지표가 여기에 표시됩니다."
-        )
+        st.info("실험용 복제본은 기존 사이트의 통계와 섞이지 않도록 서버 통계를 비활성화했습니다.")
         return
 
     admin_password = get_secret("ADMIN_PASSWORD")
@@ -830,19 +794,29 @@ def show_admin_analytics() -> None:
         f"{metrics['verification_pass_rate']:.1f}%",
     )
 
-    st.caption(
-        f"평균 이미지 생성 시도 횟수: {metrics['avg_attempts']:.2f}회"
-    )
-    st.caption(
-        "재난문자 원문과 개인정보는 통계 DB에 저장하지 않습니다."
-    )
+    st.caption(f"평균 이미지 생성 시도 횟수: {metrics['avg_attempts']:.2f}회")
+    st.caption("재난문자 원문과 개인정보는 통계 DB에 저장하지 않습니다.")
 
 
-anonymous_user_id = get_anonymous_user_id()
+def get_my_usage_count() -> int:
+    session_count = safe_count(st.session_state.get("preview_usage_count"))
+    try:
+        cookie_count = safe_count(cookie_controller.get("findvision_preview_usage_count"))
+    except Exception:
+        cookie_count = 0
+    count = max(session_count, cookie_count)
+    st.session_state["preview_usage_count"] = count
+    return count
 
-if analytics_enabled() and not st.session_state.get("visit_logged", False):
-    log_analytics_event(anonymous_user_id, "visit")
-    st.session_state["visit_logged"] = True
+
+def record_my_use() -> int:
+    count = min(get_my_usage_count() + 1, 1_000_000)
+    st.session_state["preview_usage_count"] = count
+    try:
+        cookie_controller.set("findvision_preview_usage_count", str(count))
+    except Exception:
+        pass
+    return count
 
 
 # =========================================================
@@ -850,6 +824,10 @@ if analytics_enabled() and not st.session_state.get("visit_logged", False):
 # =========================================================
 
 st.title("🔎 FindVision AI")
+st.info("🧪 별도 실험용 복제본입니다. 기존 공개 사이트와 사용 통계에는 영향을 주지 않습니다.")
+usage_metric = st.empty()
+usage_metric.metric("내가 이미지 생성에 사용한 횟수", f"{get_my_usage_count()}회")
+st.caption("이 브라우저에 저장된 완료 횟수입니다. 다른 기기에서는 별도로 계산됩니다.")
 
 st.caption(
     "상세 실종 재난문자를 AI가 분석하고, 인상착의를 반영한 "
@@ -874,26 +852,39 @@ with st.expander("📌 권장 상세 재난문자 기준", expanded=True):
 - 피부톤
 - 머리색 / 머리 길이 / 곱슬·직모 등 머리 형태
 - 상의 색상과 종류
+- 외투·겉옷 색상과 종류, 열림·닫힘 여부
 - 하의 색상과 종류
 - 신발 색상과 종류
 - 모자 색상과 정확한 종류
+- 브랜드나 머리 스타일(실제 문자에 적힌 경우만)
+- 마지막 목격 위치와 재난문자 발송 지역
 - 안경 / 수염 / 소지품 등 기타 특징
 
 **없는 정보는 AI가 임의로 사실처럼 확정하지 않습니다.**
         """
     )
 
-sample = (
-    "실종자 남성 68세, 키 164cm, 몸무게 58kg, "
-    "피부는 어두운 편, 짧은 검은색 곱슬머리, "
-    "회색 캡모자, 빨간색 반팔티, 검정색 긴바지, "
-    "검정색 크록스 착용"
+message = st.text_area(
+    "실종 재난문자 원문 — 그대로 붙여 넣기",
+    value="",
+    placeholder="받은 실종 재난문자 원문을 수정하지 않고 붙여 넣으세요.",
+    height=170,
+    max_chars=1500,
 )
 
-message = st.text_area(
-    "실종 재난문자 입력",
-    value=sample,
-    height=170,
+details = st.text_area(
+    "추가 상세 설명 — 원문 아래에 작성",
+    value="",
+    placeholder="예: 마지막 목격 위치, 외투 색상·종류, 옷 브랜드, 머리 스타일 등 확인된 추가 정보",
+    height=110,
+    max_chars=1000,
+)
+
+mode = st.radio(
+    "생성 방식",
+    ["빠른 생성", "정밀 생성"],
+    horizontal=True,
+    help="빠른 생성은 작은 이미지 1회+검수 1회, 정밀 생성은 큰 이미지로 최대 3회 재시도합니다.",
 )
 
 if st.button(
@@ -901,50 +892,63 @@ if st.button(
     type="primary",
     use_container_width=True,
 ):
-
     if not message.strip():
         st.warning("실종 재난문자를 입력해 주세요.")
         st.stop()
 
     try:
+        started_at = time.perf_counter()
         with st.spinner("재난문자의 인상착의를 분석하고 있습니다..."):
-            features = extract_features(message.strip())
+            features = extract_features(message.strip(), details.strip())
 
         origin_kr, origin_en = get_origin(features)
 
         st.subheader("1. AI가 분석한 인상착의")
-        st.write(f"**기본 인물 설정:** {origin_kr}")
+        st.write(f"**국적:** {origin_kr}")
 
         display_keys = [
-            "name", "gender", "age", "height", "weight",
-            "skin_tone", "hair_color", "hair_length", "hair_texture",
-            "top", "bottom", "shoes",
-            "hat_type", "hat_color",
-            "glasses", "facial_hair",
-            "accessories", "special_features",
+            "name",
+            "gender",
+            "age",
+            "height",
+            "weight",
+            "skin_tone",
+            "hair_color",
+            "hair_length",
+            "hair_texture",
+            "top",
+            "outerwear",
+            "outerwear_closure",
+            "bottom",
+            "shoes",
+            "hat_type",
+            "hat_color",
+            "glasses",
+            "facial_hair",
+            "accessories",
+            "special_features",
         ]
 
         c1, c2 = st.columns(2)
 
         for i, key in enumerate(display_keys):
-            target = c1 if i < 9 else c2
-            value = features.get(key, "").strip() or "정보 없음"
+            target = c1 if i < (len(display_keys) + 1) // 2 else c2
+            value = category_text(features, key)
             target.write(f"**{LABELS[key]}:** {value}")
+
+        st.write(f"**마지막 목격 위치:** {category_text(features, 'last_seen_location')}")
+        st.write(f"**재난문자 발송 지역:** {category_text(features, 'alert_area')}")
 
         ambiguity = features.get("ambiguity_notes", "").strip()
         if ambiguity:
-            st.info(
-                "⚠️ **AI가 임의로 추측하지 않은 모호한 정보:** "
-                + ambiguity
-            )
+            st.info("⚠️ **AI가 임의로 추측하지 않은 모호한 정보:** " + ambiguity)
 
         known_count = get_known_appearance_count(features)
         missing = get_missing_recommended(features)
 
         if known_count < 3:
             st.error(
-                "현재 재난문자에는 이미지를 안정적으로 생성하기 위한 "
-                "인상착의 정보가 너무 적습니다."
+                "현재 재난문자에는 이미지를 안정적으로 생성하기 위한 인상착의 정보가 너무 적습니다."
             )
             if missing:
                 st.write("**추가하면 좋은 정보:** " + ", ".join(missing))
@@ -970,7 +974,13 @@ if st.button(
         progress = st.progress(0)
         status = st.empty()
 
-        for attempt in range(1, MAX_ATTEMPTS + 1):
+        attempts_allowed = FAST_ATTEMPTS if mode == "빠른 생성" else MAX_ATTEMPTS
+        width = FAST_WIDTH if mode == "빠른 생성" else DETAILED_WIDTH
+        height = FAST_HEIGHT if mode == "빠른 생성" else DETAILED_HEIGHT
+        first_image_seconds = None
+        interim_image = st.empty()
+
+        for attempt in range(1, attempts_allowed + 1):
             status.info(f"{attempt}차 참고 이미지 생성 중...")
 
             prompt = build_generation_prompt(
@@ -979,17 +989,20 @@ if st.button(
                 correction,
             )
 
-            image_bytes, image_b64 = generate_image(prompt)
-
-            progress.progress(
-                int(((attempt - 0.5) / MAX_ATTEMPTS) * 100)
+            image_bytes, image_b64, mime_type = generate_image(prompt, width, height)
+            if first_image_seconds is None:
+                first_image_seconds = time.perf_counter() - started_at
+            interim_image.image(
+                image_bytes,
+                caption=f"{attempt}차 생성 이미지 · AI 검수 진행 중",
+                use_container_width=True,
             )
 
-            status.info(
-                f"{attempt}차 이미지가 입력 인상착의와 맞는지 검수 중..."
-            )
+            progress.progress(int(((attempt - 0.5) / attempts_allowed) * 100))
 
-            verification = verify_image(image_b64, features)
+            status.info(f"{attempt}차 이미지가 입력 인상착의와 맞는지 검수 중...")
+
+            verification = verify_image(image_b64, mime_type, features)
 
             candidate = {
                 "attempt": attempt,
@@ -997,10 +1010,7 @@ if st.button(
                 "verification": verification,
             }
 
-            if (
-                best is None
-                or verification["score"] > best["verification"]["score"]
-            ):
+            if best is None or verification["score"] > best["verification"]["score"]:
                 best = candidate
 
             if verification["pass"]:
@@ -1013,33 +1023,28 @@ if st.button(
                 "No text, calligraphy, traditional clothing, costume, or illustration."
             )
 
-            progress.progress(
-                int((attempt / MAX_ATTEMPTS) * 100)
-            )
+            progress.progress(int((attempt / attempts_allowed) * 100))
 
         progress.progress(100)
         status.empty()
+        interim_image.empty()
 
         if best is None:
             raise RuntimeError("최종 이미지를 생성하지 못했습니다.")
 
         verdict = best["verification"]
 
-        # 최종 이미지가 실제로 사용자에게 제공된 시점에 '실제 사용'으로 기록한다.
-        log_analytics_event(
-            anonymous_user_id,
-            "image_generated",
-            verification_pass=bool(verdict["pass"]),
-            verification_score=int(verdict["score"]),
-            attempts=int(best["attempt"]),
+        usage_metric.metric("내가 이미지 생성에 사용한 횟수", f"{record_my_use()}회")
+        total_seconds = time.perf_counter() - started_at
+        st.caption(
+            f"첫 이미지 생성까지 {first_image_seconds:.1f}초 · "
+            f"검수 포함 총 {total_seconds:.1f}초 · "
+            f"{width}×{height}px · 총 {attempt}회 생성"
         )
 
         st.image(
             best["image"],
-            caption=(
-                f"{best['attempt']}차 생성 결과 · "
-                f"자동 검수 점수 {verdict['score']}/100"
-            ),
+            caption=(f"{best['attempt']}차 생성 결과 · 자동 검수 점수 {verdict['score']}/100"),
             use_container_width=True,
         )
 
@@ -1047,24 +1052,21 @@ if st.button(
             st.success("자동 검수를 통과한 이미지입니다.")
         else:
             st.warning(
-                "3회 안에 모든 조건을 통과하지 못해 가장 높은 점수의 "
+                f"{attempts_allowed}회 안에 모든 조건을 통과하지 못해 가장 높은 점수의 "
                 "이미지를 표시했습니다. 최종 사용 전 사람이 확인해야 합니다."
             )
 
         if verdict["missing"]:
-            st.write(
-                "**누락된 항목:** "
-                + ", ".join(map(str, verdict["missing"]))
-            )
+            st.write("**누락된 항목:** " + ", ".join(map(str, verdict["missing"])))
 
         if verdict["wrong"]:
-            st.write(
-                "**잘못 표현된 항목:** "
-                + ", ".join(map(str, verdict["wrong"]))
-            )
+            st.write("**잘못 표현된 항목:** " + ", ".join(map(str, verdict["wrong"])))
 
         with st.expander("원문 재난문자 보기"):
             st.write(message)
+            if details.strip():
+                st.markdown("**추가 상세 설명**")
+                st.write(details)
 
     except Exception as exc:
         st.error(f"오류가 발생했습니다: {exc}")
