@@ -84,3 +84,56 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     assert "흰색 외투 (브랜드: 정보 없음)" in rendered
     assert "서울역" in rendered
     assert len(calls) == 3  # one extraction, one image, one vision check
+
+
+def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
+    prompts = {}
+    one_pixel_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+        "AAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg=="
+    )
+
+    def fake_post(url, **kwargs):
+        if "llama-3.1" in url:
+            prompts["extraction"] = kwargs["json"]["messages"][0]["content"]
+            return FakeResponse(
+                {
+                    "response": {
+                        "gender": "남성",
+                        "top": "빨간 반팔티",
+                        "bottom": "검은 긴바지",
+                        "shoes": "검은 크록스",
+                        "image_prompt_en": "a man in a red T-shirt, black pants and black clogs",
+                        "verification_requirements_en": (
+                            "red T-shirt; black pants; black clogs"
+                        ),
+                    }
+                }
+            )
+        if "flux-2-klein" in url:
+            prompts["generation"] = kwargs["files"]["prompt"][1]
+            return FakeResponse({"image": base64.b64encode(one_pixel_png).decode()})
+        if "moondream" in url:
+            prompts["vision"] = kwargs["json"]["question"]
+            return FakeResponse(
+                {
+                    "answer": json.dumps(
+                        {"score": 90, "pass": True, "missing": [], "wrong": []}
+                    )
+                }
+            )
+        raise AssertionError(f"Unexpected API: {url}")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=10).run()
+    app.text_area[0].set_value("가상 예시: 남성, 빨간 반팔티, 검은 긴바지, 검은 크록스")
+    app.button[0].click().run()
+
+    assert not app.exception
+    assert "겉옷이 명시된 경우에만" in prompts["extraction"]
+    assert "No outerwear is specified" in prompts["generation"]
+    assert "The stated outerwear must" not in prompts["generation"]
+    assert "do not require a coat or jacket" in prompts["vision"]
+    assert "required outerwear type/color/layer" not in prompts["vision"]

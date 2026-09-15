@@ -250,7 +250,7 @@ verification_requirements_en 규칙:
 - 예: "gray baseball cap; red short-sleeve T-shirt;
   black long pants; black Crocs; short black curly hair"
 - 원문에 없는 특징은 절대로 추가하지 않는다.
-- 겉옷 색·종류·여밈을 반드시 포함한다.
+- 겉옷이 명시된 경우에만 색·종류·여밈을 포함한다.
 - 닫힌 겉옷에 가려진 안쪽 상의는 시각 검수 필수 조건에 넣지 않는다.
 - 위치·이름은 이미지 검수 조건에 넣지 않는다.
 """.strip()
@@ -323,6 +323,16 @@ def build_generation_prompt(
     if not description:
         raise RuntimeError("이미지 생성용 영어 인상착의 설명을 만들지 못했습니다.")
 
+    has_outerwear = bool(str(features.get("outerwear", "") or "").strip())
+    clothing_layers = (
+        """- Outerwear is a separate garment worn OVER the inner top, never a replacement for pants or shoes.
+- Show the outerwear color and type clearly. If it is open, show the stated inner top as well.
+- If outerwear is closed, do not falsely expose a fully visible inner top.
+- If only outerwear is specified, do not invent an inner top as a matching condition."""
+        if has_outerwear
+        else "- No outerwear is specified. Follow the stated top without adding a coat or jacket."
+    )
+
     correction_block = ""
     if correction:
         correction_block = f"""
@@ -347,10 +357,7 @@ SOURCE-OF-TRUTH APPEARANCE CATEGORIES:
 {json.dumps(visual_facts(features), ensure_ascii=False)}
 
 CLOTHING LAYERS:
-- Outerwear is a separate garment worn OVER the inner top, never a replacement for pants or shoes.
-- Show the outerwear color and type clearly. If it is open, show the stated inner top as well.
-- If outerwear is closed, do not falsely expose a fully visible inner top.
-- If only outerwear is specified, do not invent an inner top as a matching condition.
+{clothing_layers}
 - A stated brand should guide garment style only; never render brand text or logos.
 
 STYLE AND COMPOSITION:
@@ -484,6 +491,18 @@ def parse_json_loose(text: str) -> dict:
 def verify_image(image_b64: str, mime_type: str, features: dict) -> dict:
     requirements = features.get("verification_requirements_en", "").strip()
     structured_facts = json.dumps(visual_facts(features), ensure_ascii=False)
+    has_outerwear = bool(str(features.get("outerwear", "") or "").strip())
+    outerwear_check = (
+        "The stated outerwear must be visibly worn over the inner top, not omitted or merged into it.\n"
+        "If outerwear is closed, do not demand that its covered inner top be fully visible."
+        if has_outerwear
+        else "No outerwear was specified; do not require a coat or jacket."
+    )
+    outerwear_rejection = (
+        "- required outerwear type/color/layer is wrong or missing"
+        if has_outerwear
+        else ""
+    )
 
     question = f"""
 Carefully verify this generated full-body reference image.
@@ -494,8 +513,7 @@ EXPLICIT REQUIRED FACTS:
 USER-SUPPLIED STRUCTURED APPEARANCE FACTS (source of truth):
 {structured_facts}
 
-The outerwear must be visibly worn over the inner top, not omitted or merged into it.
-If outerwear is closed, do not demand that its covered inner top be fully visible.
+{outerwear_check}
 Never verify a brand by assuming a logo must appear.
 Name and location are context, not visual appearance requirements.
 
@@ -505,7 +523,7 @@ Do not penalize unspecified face details.
 Reject the image if:
 - any required clothing color is wrong
 - any required clothing type is wrong
-- required outerwear type/color/layer is wrong or missing
+{outerwear_rejection}
 - required shoes are wrong
 - required hat type/color is wrong
 - specified hair or skin characteristics are wrong
