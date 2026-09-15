@@ -14,6 +14,7 @@ from streamlit_cookies_controller import CookieController
 from preview_logic import (
     analysis_message,
     category_text,
+    enhance_features_from_text,
     image_mime,
     known_appearance_count,
     missing_recommended,
@@ -283,7 +284,102 @@ verification_requirements_en 규칙:
     if not isinstance(parsed, dict):
         raise RuntimeError("AI 분석 결과가 올바른 형식이 아닙니다.")
 
-    return {key: str(parsed.get(key, "") or "").strip() for key in FIELDS}
+    features = {key: str(parsed.get(key, "") or "").strip() for key in FIELDS}
+    features = enhance_features_from_text(features, original, details)
+    return sync_prompt_text_from_structured_features(features)
+
+
+def phrase_to_prompt_en(value: str) -> str:
+    text = str(value or "").strip()
+    replacements = [
+        ("검은색", "black"),
+        ("검정색", "black"),
+        ("흰색", "white"),
+        ("하얀색", "white"),
+        ("회색", "gray"),
+        ("빨간색", "red"),
+        ("붉은색", "red"),
+        ("파란색", "blue"),
+        ("남색", "navy"),
+        ("밝은 편", "light skin tone"),
+        ("어두운 편", "dark skin tone"),
+        ("약간 짧음", "slightly short"),
+        ("짧음", "short"),
+        ("반팔티", "short-sleeve T-shirt"),
+        ("반팔 상의", "short-sleeve top"),
+        ("반팔", "short-sleeve"),
+        ("긴팔티", "long-sleeve T-shirt"),
+        ("상의", "top"),
+        ("로고있는", "with a logo"),
+        ("로고 있는", "with a logo"),
+        ("로고없는", "without a logo"),
+        ("로고 없는", "without a logo"),
+        ("반바지", "shorts"),
+        ("긴바지", "long pants"),
+        ("바지", "pants"),
+        ("크록스", "Crocs"),
+        ("모자(종류 불명)", "hat of unspecified type"),
+        ("캡모자", "baseball cap"),
+        ("모자", "hat"),
+        ("버섯머리", "mushroom haircut"),
+        ("직모", "straight hair"),
+        ("곱슬", "curly hair"),
+        ("안경", "glasses"),
+        ("없음", "none"),
+        ("작은가방", "small bag"),
+    ]
+    for source, target in replacements:
+        text = text.replace(source, target)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def sync_prompt_text_from_structured_features(features: dict) -> dict:
+    """Make rule-recovered Korean facts visible to generation and vision models."""
+    prompt_parts = []
+    requirement_parts = []
+    for label, key in (
+        ("skin tone", "skin_tone"),
+        ("hair color", "hair_color"),
+        ("hair length", "hair_length"),
+        ("hair texture", "hair_texture"),
+        ("hair style", "hair_style"),
+        ("top", "top"),
+        ("outerwear", "outerwear"),
+        ("bottom", "bottom"),
+        ("shoes", "shoes"),
+        ("hat type", "hat_type"),
+        ("hat color", "hat_color"),
+        ("glasses", "glasses"),
+        ("facial hair", "facial_hair"),
+        ("accessories", "accessories"),
+    ):
+        value = str(features.get(key, "") or "").strip()
+        if not value:
+            continue
+        english = phrase_to_prompt_en(value)
+        prompt_parts.append(f"{label}: {english}")
+        if key not in {"facial_hair"} or value != "없음":
+            requirement_parts.append(english)
+
+    if prompt_parts:
+        structured_prompt = "Explicit structured facts: " + "; ".join(prompt_parts)
+        existing_prompt = str(features.get("image_prompt_en", "") or "").strip()
+        if structured_prompt not in existing_prompt:
+            features["image_prompt_en"] = _merge_prompt_lines(existing_prompt, structured_prompt)
+
+    if requirement_parts:
+        existing_requirements = str(features.get("verification_requirements_en", "") or "").strip()
+        merged = list(requirement_parts)
+        if existing_requirements:
+            merged.insert(0, existing_requirements)
+        features["verification_requirements_en"] = "; ".join(
+            part for part in merged if str(part).strip()
+        )
+    return features
+
+
+def _merge_prompt_lines(*parts: str) -> str:
+    return "\n".join(part for part in parts if str(part or "").strip())
 
 
 # =========================================================

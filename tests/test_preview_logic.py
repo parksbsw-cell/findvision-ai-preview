@@ -1,6 +1,7 @@
 from preview_logic import (
     analysis_message,
     category_text,
+    enhance_features_from_text,
     image_mime,
     known_appearance_count,
     missing_recommended,
@@ -60,3 +61,33 @@ def test_vision_verdict_requires_score_and_real_boolean():
 def test_generated_image_format_is_detected():
     assert image_mime(b"\x89PNG\r\n\x1a\nrest") == "image/png"
     assert image_mime(b"\xff\xd8\xffrest") == "image/jpeg"
+
+
+def test_explicit_korean_details_recover_missing_clothing_and_hair():
+    original = (
+        "아시아인, 동양인, 남자, 17세, 키 177, 몸무게 62, 피부톤은 밝은 편, "
+        "머리색 검은색, 머리길이 약간 짧음, 직모, 검은색 반팔 상의, 흰색 겉옷, "
+        "검은색 반바지, 흰색 크록스, 파랑과 흰색의 섞인 모자, 버섯머리, "
+        "아산스마트팩토리마이스터고등학교, 안경 쓰고있음, 수염 없음, 작은가방, 이름 김상덕"
+    )
+    details = (
+        "상의와 하의 브랜드 없음, 아산스마트팩토리마이스터고등학교, 흰색 모자, "
+        "검은색 로고있는 상의. 반바지, 머리 스타일은 버섯머리, 소지품 곰"
+    )
+
+    recovered = enhance_features_from_text({"top": "", "bottom": "", "shoes": ""}, original, details)
+
+    assert "검은색" in recovered["top"]
+    assert "반팔" in recovered["top"]
+    assert "로고" in recovered["top"]
+    assert recovered["bottom"] == "검은색 반바지"
+    assert recovered["shoes"] == "흰색 크록스"
+    assert recovered["shoes_brand"] == "크록스"
+    assert recovered["hair_color"] == "검은색"
+    assert recovered["hair_length"] == "약간 짧음"
+    assert recovered["hair_texture"] == "직모"
+    assert recovered["hair_style"] == "버섯머리"
+    assert recovered["hat_color"] == "흰색"
+    assert recovered["hat_type"] == "모자(종류 불명)"
+    assert recovered["glasses"] == "안경"
+    assert recovered["facial_hair"] == "없음"
