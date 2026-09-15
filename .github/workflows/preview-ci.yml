@@ -20,4 +20,4 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m py_compile app.py preview_logic.py
       - run: ruff check .
-      - run: pytest -q
+      - run: python -m pytest -q
