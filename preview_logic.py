@@ -10,6 +10,7 @@ VISUAL_FIELDS = (
     "age",
     "height",
     "weight",
+    "body_type",
     "nationality",
     "skin_tone",
     "hair_color",
@@ -20,7 +21,6 @@ VISUAL_FIELDS = (
     "top_brand",
     "outerwear",
     "outerwear_brand",
-    "outerwear_closure",
     "bottom",
     "bottom_brand",
     "shoes",
@@ -39,6 +39,7 @@ APPEARANCE_FIELDS = (
     "hair_color",
     "hair_length",
     "hair_texture",
+    "body_type",
     "top",
     "outerwear",
     "bottom",
@@ -159,6 +160,15 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
             features["hair_style"] = style
             break
 
+    body_type_match = re.search(
+        r"(비만|저체중|통통한\s*편|마른\s*편|마름|뚱뚱한\s*편|건장한\s*편)",
+        text,
+    )
+    if body_type_match and (overwrite or not _has_value(features, "body_type")):
+        body_type = body_type_match.group(1)
+        aliases = {"마름": "마른 편"}
+        features["body_type"] = aliases.get(body_type, body_type.replace(" ", " "))
+
     top = _extract_clothing(text, r"(?:반팔티|반팔\s*상의|긴팔티|티셔츠|상의|셔츠|니트)")
     existing_top = str(features.get("top", "") or "")
     if top and (overwrite or not _has_value(features, "top")):
@@ -171,6 +181,8 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         features["top"] = _merge_words(str(features.get("top", "")), "반팔")
     if re.search(r"(?:브랜드\s*)?없음|브랜드\s*없", text) and _has_value(features, "top"):
         features["top_brand"] = ""
+    if re.search(r"하의\s*브랜드\s*없|상의와\s*하의\s*브랜드\s*없", text):
+        features["bottom_brand"] = ""
 
     bottom = _extract_clothing(text, r"(?:반바지|긴바지|바지)")
     if bottom and (overwrite or not _has_value(features, "bottom")):
@@ -187,6 +199,12 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         features["shoes"] = shoes
     if "크록스" in str(features.get("shoes", "")) or re.search(r"크록스", text):
         features["shoes_brand"] = "크록스"
+    for brand in ("아디다스", "나이키", "푸마", "뉴발란스"):
+        if brand in text and re.search(rf"{brand}\s*(?:슬리퍼|신발|운동화|크록스|구두)", text):
+            features["shoes_brand"] = brand
+            if _has_value(features, "shoes") and brand not in str(features.get("shoes", "")):
+                features["shoes"] = _merge_words(brand, str(features.get("shoes", "")))
+            break
 
     hat_color = _find_color_before(text, r"(?:모자|캡모자|야구모자)")
     if "캡모자" in text or "야구모자" in text:
@@ -201,8 +219,32 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         features["glasses"] = "안경"
     if re.search(r"수염\s*없", text) and (overwrite or not _has_value(features, "facial_hair")):
         features["facial_hair"] = "없음"
-    if re.search(r"작은\s*가방|가방", text) and (overwrite or not _has_value(features, "accessories")):
-        features["accessories"] = "작은가방"
+    accessory_terms: list[str] = []
+    for pattern, label in (
+        (r"작은\s*가방", "작은가방"),
+        (r"백팩", "백팩"),
+        (r"가방", "가방"),
+        (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
+        (r"지갑", "지갑"),
+        (r"우산", "우산"),
+        (r"목걸이", "목걸이"),
+        (r"팔찌", "팔찌"),
+        (r"시계", "시계"),
+        (r"소지품\s*([가-힣A-Za-z0-9]+)", ""),
+    ):
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        value = match.group(1) if label == "" and match.groups() else label
+        if value and value not in accessory_terms:
+            accessory_terms.append(value)
+    if accessory_terms and (overwrite or not _has_value(features, "accessories")):
+        existing = str(features.get("accessories", "") or "")
+        features["accessories"] = _merge_words(existing, *accessory_terms)
+
+    location_match = re.search(r"(?:목격\s*위치|마지막\s*목격\s*위치)\s*([^,.\n]+)", text)
+    if location_match and (overwrite or not _has_value(features, "last_seen_location")):
+        features["last_seen_location"] = location_match.group(1).strip()
 
 
 def enhance_features_from_text(features: dict[str, Any], original: str, details: str) -> dict[str, Any]:

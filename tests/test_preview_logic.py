@@ -91,3 +91,23 @@ def test_explicit_korean_details_recover_missing_clothing_and_hair():
     assert recovered["hat_type"] == "모자(종류 불명)"
     assert recovered["glasses"] == "안경"
     assert recovered["facial_hair"] == "없음"
+
+
+def test_body_type_accessories_and_shoe_brand_are_recovered():
+    original = (
+        "국적 대한민국, 남성, 키 177, 몸무게 120, 피부톤 어두운편, "
+        "상의 검은색 반팔티, 외투 회색 작업복, 하의 검은색 반바지, "
+        "신발 검은색 슬리퍼, 모자 검은색 모자, 목격 위치 아산스마트팩토리마이스터고등학교"
+    )
+    details = "상의와 하의 브랜드 없음, 아디다스 슬리퍼, 비만, 소지품 금, 작은 가방, 시계"
+
+    recovered = enhance_features_from_text({}, original, details)
+
+    assert recovered["body_type"] == "비만"
+    assert recovered["shoes_brand"] == "아디다스"
+    assert "아디다스" in recovered["shoes"]
+    assert "슬리퍼" in recovered["shoes"]
+    assert "금" in recovered["accessories"]
+    assert "작은가방" in recovered["accessories"]
+    assert "시계" in recovered["accessories"]
+    assert recovered["last_seen_location"] == "아산스마트팩토리마이스터고등학교"

@@ -52,6 +52,7 @@ FIELDS = [
     "age",
     "height",
     "weight",
+    "body_type",
     "nationality",
     "skin_tone",
     "hair_color",
@@ -62,7 +63,6 @@ FIELDS = [
     "top_brand",
     "outerwear",
     "outerwear_brand",
-    "outerwear_closure",
     "bottom",
     "bottom_brand",
     "shoes",
@@ -87,6 +87,7 @@ LABELS = {
     "age": "나이",
     "height": "키",
     "weight": "몸무게",
+    "body_type": "체형",
     "nationality": "국적",
     "skin_tone": "피부톤",
     "hair_color": "머리색",
@@ -97,7 +98,6 @@ LABELS = {
     "top_brand": "상의 브랜드",
     "outerwear": "외투·겉옷",
     "outerwear_brand": "겉옷 브랜드",
-    "outerwear_closure": "겉옷 여밈",
     "bottom": "하의",
     "bottom_brand": "하의 브랜드",
     "shoes": "신발",
@@ -232,8 +232,9 @@ def extract_features(original: str, details: str) -> dict:
 4. 피부톤, 곱슬/직모, 수염, 안경 등은 명시된 경우만 적는다.
 5. ambiguity_notes에는 구체적으로 정할 수 없는 부분을 한국어로 적는다.
 6. 티셔츠·셔츠·니트는 top, 자켓·점퍼·코트·바람막이·후드집업·패딩·외투는 outerwear로 분리한다.
-7. 겉옷이 열려 있는지 닫혀 있는지 명시된 경우 outerwear_closure에 적고, 없으면 빈 문자열이다.
+7. 체형은 비만, 통통한 편, 마른 편, 저체중 등 명시된 경우 body_type에 적는다.
 8. 겉옷이 있더라도 top을 삭제하지 않는다. 단, 겉옷 안의 상의가 명시되지 않았으면 top은 비운다.
+9. 소지품과 액세서리는 accessories에 가능한 한 빠짐없이 적는다.
 
 image_prompt_en 규칙:
 - 반드시 자연스럽고 정확한 영어로 작성한다.
@@ -242,7 +243,6 @@ image_prompt_en 규칙:
 - 실제 얼굴 생김새를 창작하지 않는다.
 - 국적이 없는 경우 특정 국적을 추가하지 않는다.
 - 겉옷은 상의 위에 겹쳐 입는 레이어로 명확하게 기술한다.
-- 겉옷이 닫혀 있다면 안의 상의가 보인다고 강요하지 않는다.
 - 브랜드 이름은 명시된 경우 의류 디자인 설명에만 사용하고 로고·문자를 생성하라고 요구하지 않는다.
 
 verification_requirements_en 규칙:
@@ -251,7 +251,7 @@ verification_requirements_en 규칙:
 - 예: "gray baseball cap; red short-sleeve T-shirt;
   black long pants; black Crocs; short black curly hair"
 - 원문에 없는 특징은 절대로 추가하지 않는다.
-- 겉옷이 명시된 경우에만 색·종류·여밈을 포함한다.
+- 겉옷이 명시된 경우에만 색·종류를 포함한다.
 - 닫힌 겉옷에 가려진 안쪽 상의는 시각 검수 필수 조건에 넣지 않는다.
 - 위치·이름은 이미지 검수 조건에 넣지 않는다.
 """.strip()
@@ -303,6 +303,12 @@ def phrase_to_prompt_en(value: str) -> str:
         ("남색", "navy"),
         ("밝은 편", "light skin tone"),
         ("어두운 편", "dark skin tone"),
+        ("통통한 편", "stocky build"),
+        ("뚱뚱한 편", "heavy build"),
+        ("건장한 편", "sturdy build"),
+        ("마른 편", "thin build"),
+        ("저체중", "underweight build"),
+        ("비만", "obese build"),
         ("약간 짧음", "slightly short"),
         ("짧음", "short"),
         ("반팔티", "short-sleeve T-shirt"),
@@ -318,6 +324,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("긴바지", "long pants"),
         ("바지", "pants"),
         ("크록스", "Crocs"),
+        ("슬리퍼", "slippers"),
+        ("운동화", "sneakers"),
         ("모자(종류 불명)", "hat of unspecified type"),
         ("캡모자", "baseball cap"),
         ("모자", "hat"),
@@ -327,6 +335,13 @@ def phrase_to_prompt_en(value: str) -> str:
         ("안경", "glasses"),
         ("없음", "none"),
         ("작은가방", "small bag"),
+        ("가방", "bag"),
+        ("휴대폰", "phone"),
+        ("지갑", "wallet"),
+        ("우산", "umbrella"),
+        ("목걸이", "necklace"),
+        ("팔찌", "bracelet"),
+        ("시계", "watch"),
     ]
     for source, target in replacements:
         text = text.replace(source, target)
@@ -343,6 +358,7 @@ def sync_prompt_text_from_structured_features(features: dict) -> dict:
         ("hair length", "hair_length"),
         ("hair texture", "hair_texture"),
         ("hair style", "hair_style"),
+        ("body type", "body_type"),
         ("top", "top"),
         ("outerwear", "outerwear"),
         ("bottom", "bottom"),
@@ -975,10 +991,11 @@ with st.expander("📌 권장 상세 재난문자 기준", expanded=True):
 가능하면 다음 정보를 포함해 주세요.
 
 - 성별 / 나이 / 키 / 몸무게
+- 체형(비만 / 저체중 / 통통한 편 / 마른 편 등)
 - 피부톤
 - 머리색 / 머리 길이 / 곱슬·직모 등 머리 형태
 - 상의 색상과 종류
-- 외투·겉옷 색상과 종류, 열림·닫힘 여부
+- 외투·겉옷 색상과 종류
 - 하의 색상과 종류
 - 신발 색상과 종류
 - 모자 색상과 정확한 종류
@@ -1013,11 +1030,15 @@ mode = st.radio(
     help="빠른 생성은 작은 이미지 1회+검수 1회, 정밀 생성은 큰 이미지로 최대 3회 재시도합니다.",
 )
 
-if st.button(
+run_requested = st.session_state.pop("regenerate_requested", False)
+primary_clicked = st.button(
     "AI 분석 및 참고 이미지 생성",
     type="primary",
     use_container_width=True,
-):
+)
+run_requested = primary_clicked or run_requested
+
+if run_requested:
     if not message.strip():
         st.warning("실종 재난문자를 입력해 주세요.")
         st.stop()
@@ -1038,13 +1059,13 @@ if st.button(
             "age",
             "height",
             "weight",
+            "body_type",
             "skin_tone",
             "hair_color",
             "hair_length",
             "hair_texture",
             "top",
             "outerwear",
-            "outerwear_closure",
             "bottom",
             "shoes",
             "hat_type",
@@ -1193,6 +1214,10 @@ if st.button(
             if details.strip():
                 st.markdown("**추가 상세 설명**")
                 st.write(details)
+
+        if st.button("다시 생성하기", type="primary", use_container_width=True):
+            st.session_state["regenerate_requested"] = True
+            st.rerun()
 
     except Exception as exc:
         st.error(f"오류가 발생했습니다: {exc}")

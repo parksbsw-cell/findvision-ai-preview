@@ -35,6 +35,7 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
                         "name": "",
                         "gender": "남성",
                         "age": "68세",
+                        "body_type": "마른 편",
                         "top": "빨간 반팔티",
                         "outerwear": "흰색 외투",
                         "outerwear_brand": "",
@@ -81,8 +82,11 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     assert not app.exception
     assert app.metric[0].value == "1회"
     rendered = "\n".join(markdown.value for markdown in app.markdown)
+    assert "마른 편" in rendered
     assert "흰색 외투 (브랜드: 정보 없음)" in rendered
+    assert "겉옷 여밈" not in rendered
     assert "서울역" in rendered
+    assert any(button.label == "다시 생성하기" for button in app.button)
     assert len(calls) == 3  # one extraction, one image, one vision check
 
 
