@@ -825,6 +825,18 @@ def record_my_use() -> int:
 
 st.title("🔎 FindVision AI")
 st.info("🧪 별도 실험용 복제본입니다. 기존 공개 사이트와 사용 통계에는 영향을 주지 않습니다.")
+missing_cloudflare_settings = [
+    name
+    for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
+    if not get_secret(name)
+]
+if missing_cloudflare_settings:
+    st.warning(
+        "실제 AI 분석·이미지 생성을 사용하려면 이 복제본 앱의 Streamlit Secrets에 "
+        + ", ".join(missing_cloudflare_settings)
+        + "을(를) 등록해야 합니다. GitHub 저장소에 API 키를 올리지 마세요. "
+        "설정 방법은 PREVIEW_SETUP.md를 확인하세요."
+    )
 usage_metric = st.empty()
 usage_metric.metric("내가 이미지 생성에 사용한 횟수", f"{get_my_usage_count()}회")
 st.caption("이 브라우저에 저장된 완료 횟수입니다. 다른 기기에서는 별도로 계산됩니다.")
