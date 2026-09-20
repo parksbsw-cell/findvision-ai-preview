@@ -1,4 +1,5 @@
 import base64
+import hmac
 import json
 import os
 import re
@@ -12,6 +13,7 @@ import streamlit as st
 from streamlit_cookies_controller import CookieController
 
 from preview_logic import (
+    BRANDS,
     analysis_message,
     category_text,
     enhance_features_from_text,
@@ -28,7 +30,7 @@ from preview_logic import (
 # =========================================================
 
 st.set_page_config(
-    page_title="FindVision AI",
+    page_title="ClueSight",
     page_icon="🔎",
     layout="wide",
 )
@@ -163,11 +165,10 @@ def cloudflare_json_request(model: str, payload: dict, timeout: int = 120) -> An
         ) from exc
 
     if not response.ok or not data.get("success", False):
-        errors = data.get("errors") or []
-        message = errors[0].get("message") if errors else str(data)
-        raise RuntimeError(
-            f"Cloudflare AI 요청 실패 [{model}] (HTTP {response.status_code}): {message}"
-        )
+        flagged = "flagged" in json.dumps(data).lower()
+        if flagged:
+            raise RuntimeError("이미지 제공자의 안전 검사로 생성이 중단되었습니다. 자동 재시도하지 않습니다.")
+        raise RuntimeError(f"AI 제공자 요청 실패 (HTTP {response.status_code}). 잠시 후 다시 시도해 주세요.")
 
     return data.get("result")
 
@@ -191,11 +192,10 @@ def cloudflare_multipart_request(model: str, fields: dict, timeout: int = 180) -
         ) from exc
 
     if not response.ok or not data.get("success", False):
-        errors = data.get("errors") or []
-        message = errors[0].get("message") if errors else str(data)
-        raise RuntimeError(
-            f"Cloudflare AI 요청 실패 [{model}] (HTTP {response.status_code}): {message}"
-        )
+        flagged = "flagged" in json.dumps(data).lower()
+        if flagged:
+            raise RuntimeError("이미지 제공자의 안전 검사로 생성이 중단되었습니다. 자동 재시도하지 않습니다.")
+        raise RuntimeError(f"AI 제공자 요청 실패 (HTTP {response.status_code}). 잠시 후 다시 시도해 주세요.")
 
     return data.get("result")
 
@@ -292,6 +292,29 @@ verification_requirements_en 규칙:
 def phrase_to_prompt_en(value: str) -> str:
     text = str(value or "").strip()
     replacements = [
+        ("투블럭컷", "two-block haircut"), ("투블럭", "two-block haircut with short sides and longer top"),
+        ("히피펌", "tight curly perm"), ("가르마펌", "side-parted perm"),
+        ("리프컷", "layered medium-length leaf haircut"), ("댄디컷", "neat short haircut with fringe"),
+        ("포마드", "slicked-back pompadour"), ("울프컷", "layered wolf cut"),
+        ("스포츠머리", "short athletic haircut"), ("반삭머리", "buzz cut"),
+        ("반삭", "buzz cut"), ("삭발", "shaved head"), ("숏컷", "short haircut"),
+        ("단발머리", "bob haircut"), ("단발", "bob haircut"), ("보브컷", "bob haircut"),
+        ("장발", "long hair"), ("긴머리", "long hair"), ("포니테일", "ponytail"),
+        ("묶은머리", "tied-back hair"), ("땋은머리", "braided hair"),
+        ("파마머리", "permed hair"), ("파마", "permed hair"),
+        ("고도 비만", "very heavy build"), ("고도비만", "very heavy build"),
+        ("보통 체형", "average build"), ("남성", "male"), ("여성", "female"),
+        ("청바지", "jeans"), ("초록색", "green"), ("노란색", "yellow"),
+        ("베이지색", "beige"), ("갈색", "brown"), ("분홍색", "pink"),
+        ("보라색", "purple"), ("주황색", "orange"),
+        ("후드집업", "zip-up hoodie"), ("후드티", "hoodie"), ("맨투맨", "sweatshirt"),
+        ("티셔츠", "T-shirt"), ("셔츠", "shirt"), ("니트", "knit sweater"),
+        ("바람막이", "windbreaker"), ("패딩", "puffer jacket"),
+        ("점퍼", "jacket"), ("자켓", "jacket"), ("재킷", "jacket"),
+        ("코트", "coat"), ("외투", "coat"), ("겉옷", "outerwear"),
+        ("슬랙스", "slacks"), ("치마", "skirt"), ("레깅스", "leggings"),
+        ("부츠", "boots"), ("구두", "dress shoes"), ("샌들", "sandals"),
+        ("단화", "flat shoes"), ("백팩", "backpack"),
         ("검은색", "black"),
         ("검정색", "black"),
         ("흰색", "white"),
@@ -349,48 +372,24 @@ def phrase_to_prompt_en(value: str) -> str:
 
 
 def sync_prompt_text_from_structured_features(features: dict) -> dict:
-    """Make rule-recovered Korean facts visible to generation and vision models."""
-    prompt_parts = []
-    requirement_parts = []
-    for label, key in (
-        ("skin tone", "skin_tone"),
-        ("hair color", "hair_color"),
-        ("hair length", "hair_length"),
-        ("hair texture", "hair_texture"),
-        ("hair style", "hair_style"),
-        ("body type", "body_type"),
-        ("top", "top"),
-        ("outerwear", "outerwear"),
-        ("bottom", "bottom"),
-        ("shoes", "shoes"),
-        ("hat type", "hat_type"),
-        ("hat color", "hat_color"),
-        ("glasses", "glasses"),
-        ("facial hair", "facial_hair"),
-        ("accessories", "accessories"),
-    ):
-        value = str(features.get(key, "") or "").strip()
-        if not value:
+    """Rebuild from structured appearance only; discard free-form model prose."""
+    parts = []
+    requirements = []
+    for key, value in visual_facts(features).items():
+        if key.endswith("_brand") or key == "nationality":
             continue
-        english = phrase_to_prompt_en(value)
-        prompt_parts.append(f"{label}: {english}")
-        if key not in {"facial_hair"} or value != "없음":
-            requirement_parts.append(english)
-
-    if prompt_parts:
-        structured_prompt = "Explicit structured facts: " + "; ".join(prompt_parts)
-        existing_prompt = str(features.get("image_prompt_en", "") or "").strip()
-        if structured_prompt not in existing_prompt:
-            features["image_prompt_en"] = _merge_prompt_lines(existing_prompt, structured_prompt)
-
-    if requirement_parts:
-        existing_requirements = str(features.get("verification_requirements_en", "") or "").strip()
-        merged = list(requirement_parts)
-        if existing_requirements:
-            merged.insert(0, existing_requirements)
-        features["verification_requirements_en"] = "; ".join(
-            part for part in merged if str(part).strip()
-        )
+        # Brands remain in the analysis display. Logos are not verification criteria.
+        for brand in BRANDS:
+            if brand.lower() not in {"crocs", "크록스"}:
+                value = re.sub(re.escape(brand), "", value, flags=re.I)
+        value = value.replace("크록스", "clogs").replace("Crocs", "clogs")
+        value = re.sub(r"로고\s*(있는|없는)|[()]", "", value).strip()
+        part = f"{key.replace('_', ' ')}: {phrase_to_prompt_en(value)}"
+        parts.append(part)
+        if key not in {"height", "weight", "age"}:
+            requirements.append(part)
+    features["image_prompt_en"] = "; ".join(parts)
+    features["verification_requirements_en"] = "; ".join(requirements)
     return features
 
 
@@ -429,92 +428,22 @@ def build_generation_prompt(
     correction: str = "",
 ) -> str:
 
-    description = features.get("image_prompt_en", "").strip()
-    requirements = features.get("verification_requirements_en", "").strip()
-
+    features = sync_prompt_text_from_structured_features(dict(features))
+    description = features["image_prompt_en"]
     if not description:
-        raise RuntimeError("이미지 생성용 영어 인상착의 설명을 만들지 못했습니다.")
-
-    has_outerwear = bool(str(features.get("outerwear", "") or "").strip())
-    clothing_layers = (
-        """- Outerwear is a separate garment worn OVER the inner top, never a replacement for pants or shoes.
-- Show the outerwear color and type clearly. If it is open, show the stated inner top as well.
-- If outerwear is closed, do not falsely expose a fully visible inner top.
-- If only outerwear is specified, do not invent an inner top as a matching condition."""
-        if has_outerwear
-        else "- No outerwear is specified. Follow the stated top without adding a coat or jacket."
+        raise RuntimeError("이미지 생성에 필요한 인상착의 정보가 없습니다.")
+    layers = ("Wear the stated outerwear over the inner top. A closed outer layer may hide the top."
+              if features.get("outerwear") else "No outerwear is specified; do not add a coat or jacket.")
+    prompt = (
+        "Create one photorealistic full-body appearance reference of a fictional person. "
+        "This is an illustration of described clothing and build, not an identified person's face. "
+        "Standing front view, head and feet visible, plain light background, contemporary clothing. "
+        "Match only the stated appearance facts; unspecified details are illustrative. "
+        "No text, logos or watermark. " + layers + "\n" + description
     )
-
-    correction_block = ""
     if correction:
-        correction_block = f"""
-PREVIOUS IMAGE FAILED VERIFICATION.
-Fix ONLY these problems:
-{correction}
-
-Do not change any requirement that was already correct.
-""".strip()
-
-    prompt = f"""
-Create a PHOTOREALISTIC full-body reference photograph of exactly ONE person.
-{f"Explicit nationality: {origin_en}." if origin_en else "Nationality is unspecified; do not assume one."}
-
-PERSON DESCRIPTION:
-{description}
-
-MANDATORY VISIBLE REQUIREMENTS:
-{requirements}
-
-SOURCE-OF-TRUTH APPEARANCE CATEGORIES:
-{json.dumps(visual_facts(features), ensure_ascii=False)}
-
-CLOTHING LAYERS:
-{clothing_layers}
-- A stated brand should guide garment style only; never render brand text or logos.
-
-STYLE AND COMPOSITION:
-- realistic contemporary everyday person
-- modern ordinary clothing exactly matching the description
-- natural front-facing standing pose
-- entire body visible from head to feet
-- plain white or very light gray studio background
-- realistic camera photograph
-- neutral documentary/reference-photo appearance
-
-STRICT PROHIBITIONS:
-- NO traditional, historical or ceremonial clothing unless explicitly stated
-- NO fantasy clothing
-- NO wizard clothing
-- NO conical fantasy hat
-- NO costume reinterpretation
-- NO anime
-- NO cartoon
-- NO illustration
-- NO poster design
-- NO calligraphy
-- NO text
-- NO Korean characters
-- NO Chinese characters
-- NO Japanese characters
-- NO English text
-- NO numbers
-- NO logos
-- NO signs
-- NO watermark
-
-ACCURACY RULES:
-- Every stated clothing color must match exactly.
-- Every stated clothing type must match exactly.
-- If a baseball cap is specified, it must be a baseball cap.
-- If black long pants are specified, they must be black long pants.
-- If Crocs are specified, they must look like Crocs, not sneakers.
-- If skin tone or hair texture is specified, reflect it accurately.
-- Do not invent distinctive facial details that were not provided.
-
-{correction_block}
-""".strip()
-
-    return prompt[:3500]
+        prompt += "\nCorrect these visible mismatches only: " + correction[:800]
+    return prompt
 
 
 def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, str]:
@@ -685,12 +614,13 @@ feedback_en must tell the image generator exactly what to correct.
 
 
 def analytics_enabled() -> bool:
-    # The copy must never mix experiments with the original site's Supabase metrics.
-    return False
+    # Explicit opt-in; the dedicated ClueSight table isolates legacy metrics.
+    return (get_secret("CLUESIGHT_ANALYTICS_ENABLED").lower() == "true"
+            and bool(get_secret("SUPABASE_URL")) and bool(supabase_key()))
 
 
 def supabase_key() -> str:
-    return get_secret("SUPABASE_SECRET_KEY") or get_secret("SUPABASE_KEY")
+    return get_secret("SUPABASE_SECRET_KEY")
 
 
 def get_anonymous_user_id() -> str:
@@ -706,12 +636,16 @@ def get_anonymous_user_id() -> str:
     except Exception:
         saved = None
 
+    try:
+        saved = str(uuid.UUID(str(saved))) if saved else None
+    except ValueError:
+        saved = None
     if saved:
         user_id = str(saved)
     else:
         user_id = str(uuid.uuid4())
         try:
-            cookie_controller.set("findvision_uid", user_id)
+            cookie_controller.set("findvision_uid", user_id, max_age=365 * 24 * 60 * 60)
         except Exception:
             pass
 
@@ -721,89 +655,44 @@ def get_anonymous_user_id() -> str:
 
 def supabase_headers() -> dict:
     key = supabase_key()
-    return {
+    headers = {
         "apikey": key,
-        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
+    if not key.startswith("sb_secret_"):
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
 
 
-def log_analytics_event(
-    user_id: str,
-    event_type: str,
-    verification_pass=None,
-    verification_score=None,
-    attempts=None,
-) -> None:
+def log_analytics_event(user_id, event_type, verification_pass=None,
+                        verification_score=None, attempts=None, event_id=None,
+                        mode=None, first_image_seconds=None, total_seconds=None) -> bool:
     if not analytics_enabled():
-        return
-
-    url = get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/analytics_events"
-
-    payload = {
-        "user_id": user_id,
-        "event_type": event_type,
-        "verification_pass": verification_pass,
-        "verification_score": verification_score,
-        "attempts": attempts,
-    }
-
+        return False
+    payload = dict(event_id=event_id or str(uuid.uuid4()), user_id=user_id,
+                   event_type=event_type, verification_pass=verification_pass,
+                   verification_score=verification_score, attempts=attempts,
+                   mode=mode, first_image_seconds=first_image_seconds, total_seconds=total_seconds)
     try:
         response = requests.post(
-            url,
-            headers={
-                **supabase_headers(),
-                "Prefer": "return=minimal",
-            },
-            json=payload,
-            timeout=15,
-        )
+            get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/cluesight_events",
+            headers={**supabase_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+            params={"on_conflict": "event_id"}, json=payload, timeout=5)
         response.raise_for_status()
+        return True
     except Exception:
-        # 통계 DB 장애가 본 기능을 막지 않도록 무시한다.
-        pass
+        return False
 
 
-def fetch_analytics_events(max_rows: int = 10000) -> list:
-    if not analytics_enabled():
-        return []
-
-    url = get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/analytics_events"
-    rows = []
-    page_size = 1000
-    start = 0
-
-    while start < max_rows:
-        end = min(start + page_size - 1, max_rows - 1)
-
-        response = requests.get(
-            url,
-            headers={
-                **supabase_headers(),
-                "Range": f"{start}-{end}",
-            },
-            params={
-                "select": (
-                    "user_id,event_type,created_at,verification_pass,verification_score,attempts"
-                ),
-                "order": "created_at.asc",
-            },
-            timeout=20,
-        )
-        response.raise_for_status()
-
-        chunk = response.json()
-        if not chunk:
-            break
-
-        rows.extend(chunk)
-
-        if len(chunk) < page_size:
-            break
-
-        start += page_size
-
-    return rows
+def fetch_analytics_summary() -> dict:
+    response = requests.post(
+        get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/rpc/cluesight_analytics_summary",
+        headers=supabase_headers(), json={}, timeout=10)
+    response.raise_for_status()
+    result = response.json()
+    if not isinstance(result, dict) or "total_generations" not in result:
+        raise ValueError("Invalid analytics summary")
+    return result
 
 
 def parse_created_at(value: str):
@@ -873,7 +762,7 @@ def show_admin_analytics() -> None:
     st.subheader("📊 ClueSight 서비스 사용 지표")
 
     if not analytics_enabled():
-        st.info("실험용 복제본은 기존 사이트의 통계와 섞이지 않도록 서버 통계를 비활성화했습니다.")
+        st.info("전체 통계가 연결되지 않았습니다. 설정 전 사용량을 전체 사용자 수로 표시하지 않습니다.")
         return
 
     admin_password = get_secret("ADMIN_PASSWORD")
@@ -887,36 +776,35 @@ def show_admin_analytics() -> None:
         key="analytics_admin_password",
     )
 
-    if entered != admin_password:
+    if not hmac.compare_digest(entered.encode("utf-8"), admin_password.encode("utf-8")):
         if entered:
             st.error("비밀번호가 맞지 않습니다.")
         return
 
     try:
-        rows = fetch_analytics_events()
-        metrics = calculate_analytics(rows)
-    except Exception as exc:
-        st.error(f"통계를 불러오지 못했습니다: {exc}")
+        metrics = fetch_analytics_summary()
+    except Exception:
+        st.error("통계 연결을 확인해 주세요. 현재 집계값을 불러오지 못했습니다.")
         return
 
     a, b, c = st.columns(3)
-    a.metric("누적 실제 사용자", f"{metrics['total_users']}명")
+    a.metric("누적 생성 브라우저", f"{metrics['total_users']}개")
     b.metric(
-        "최근 7일 실제 사용자",
-        f"{metrics['weekly_active_users']}명",
-        help="최근 7일 안에 이미지 생성을 1회 이상 완료한 사람",
+        "최근 7일 생성 브라우저",
+        f"{metrics['weekly_active_users']}개",
+        help="최근 7일 안에 이미지 생성을 1회 이상 완료한 익명 브라우저",
     )
     c.metric(
-        "재방문 사용자",
-        f"{metrics['returning_users']}명",
-        help="서로 다른 날짜에 이미지 생성을 2회 이상 완료한 사람",
+        "재방문 브라우저",
+        f"{metrics['returning_users']}개",
+        help="서로 다른 날짜에 이미지 생성을 2회 이상 완료한 익명 브라우저",
     )
 
     d, e, f = st.columns(3)
     d.metric(
-        "최근 7일 재방문 사용자",
-        f"{metrics['weekly_returning_users']}명",
-        help="최근 7일 동안 서로 다른 날짜에 2회 이상 사용한 사람",
+        "최근 7일 재방문 브라우저",
+        f"{metrics['weekly_returning_users']}개",
+        help="최근 7일 동안 서로 다른 날짜에 2회 이상 사용한 익명 브라우저",
     )
     e.metric("총 이미지 생성", f"{metrics['total_generations']}회")
     f.metric(
@@ -925,7 +813,7 @@ def show_admin_analytics() -> None:
     )
 
     st.caption(f"평균 이미지 생성 시도 횟수: {metrics['avg_attempts']:.2f}회")
-    st.caption("재난문자 원문과 개인정보는 통계 DB에 저장하지 않습니다.")
+    st.caption("익명 브라우저 기준이며 실제 사람 수와 다릅니다. 재방문 날짜는 한국 시간 기준입니다. 원문·이미지·이름·위치는 통계 DB에 저장하지 않습니다.")
 
 
 def get_my_usage_count() -> int:
@@ -943,7 +831,7 @@ def record_my_use() -> int:
     count = min(get_my_usage_count() + 1, 1_000_000)
     st.session_state["preview_usage_count"] = count
     try:
-        cookie_controller.set("findvision_preview_usage_count", str(count))
+        cookie_controller.set("findvision_preview_usage_count", str(count), max_age=365 * 24 * 60 * 60)
     except Exception:
         pass
     return count
@@ -953,8 +841,8 @@ def record_my_use() -> int:
 # UI
 # =========================================================
 
-st.title("🔎 FindVision AI")
-st.info("🧪 별도 실험용 복제본입니다. 기존 공개 사이트와 사용 통계에는 영향을 주지 않습니다.")
+st.title("🔎 ClueSight")
+st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.09.20")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
@@ -962,7 +850,7 @@ missing_cloudflare_settings = [
 ]
 if missing_cloudflare_settings:
     st.warning(
-        "실제 AI 분석·이미지 생성을 사용하려면 이 복제본 앱의 Streamlit Secrets에 "
+        "실제 AI 분석·이미지 생성을 사용하려면 앱의 Streamlit Secrets에 "
         + ", ".join(missing_cloudflare_settings)
         + "을(를) 등록해야 합니다. GitHub 저장소에 API 키를 올리지 마세요. "
         "설정 방법은 PREVIEW_SETUP.md를 확인하세요."
@@ -1030,194 +918,144 @@ mode = st.radio(
     help="빠른 생성은 작은 이미지 1회+검수 1회, 정밀 생성은 큰 이미지로 최대 3회 재시도합니다.",
 )
 
-run_requested = st.session_state.pop("regenerate_requested", False)
+
 primary_clicked = st.button(
     "AI 분석 및 참고 이미지 생성",
     type="primary",
     use_container_width=True,
 )
-run_requested = primary_clicked or run_requested
+run_requested = primary_clicked or st.session_state.pop("regenerate_requested", False)
 
 if run_requested:
     if not message.strip():
         st.warning("실종 재난문자를 입력해 주세요.")
-        st.stop()
+    else:
+        try:
+            started_at = time.perf_counter()
+            with st.spinner("인상착의를 분석하고 있습니다..."):
+                features = extract_features(message.strip(), details.strip())
+            if get_known_appearance_count(features) < 3:
+                st.warning("인상착의 정보가 부족합니다. 옷·머리·신발 등 확인된 특징을 추가해 주세요.")
+            else:
+                st.session_state["last_analysis"] = features
+                best = None
+                correction = ""
+                attempts_allowed = FAST_ATTEMPTS if mode == "빠른 생성" else MAX_ATTEMPTS
+                width = FAST_WIDTH if mode == "빠른 생성" else DETAILED_WIDTH
+                height = FAST_HEIGHT if mode == "빠른 생성" else DETAILED_HEIGHT
+                first_image_seconds = None
+                attempts_completed = 0
+                interrupted = False
+                status = st.empty()
+                interim = st.empty()
+                for attempt in range(1, attempts_allowed + 1):
+                    status.info(f"{attempt}차 이미지 생성 중...")
+                    prompt = build_generation_prompt(features, "", correction)
+                    try:
+                        image_bytes, image_b64, mime_type = generate_image(prompt, width, height)
+                    except Exception:
+                        if best is None:
+                            raise
+                        interrupted = True
+                        break
+                    attempts_completed += 1
+                    if first_image_seconds is None:
+                        first_image_seconds = time.perf_counter() - started_at
+                    interim.image(image_bytes, caption="생성 완료 · 자동 검수 중", use_container_width=True)
+                    status.info(f"{attempt}차 이미지 검수 중...")
+                    try:
+                        verdict = verify_image(image_b64, mime_type, features)
+                        verdict["available"] = "raw" not in verdict or bool(parse_json_loose(verdict["raw"]))
+                    except Exception:
+                        verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
+                                   "feedback_en": "", "available": False}
+                    candidate = {"attempt": attempt, "image": image_bytes, "verification": verdict}
+                    if best is None or (verdict["pass"], verdict["available"], verdict["score"]) > (
+                        best["verification"]["pass"], best["verification"]["available"], best["verification"]["score"]
+                    ):
+                        best = candidate
+                    if verdict["pass"] or not verdict["available"]:
+                        break
+                    correction = verdict["feedback_en"]
+                status.empty()
+                interim.empty()
+                total_seconds = time.perf_counter() - started_at
+                event_id = str(uuid.uuid4())
+                result = dict(best=best, features=features, message=message, details=details,
+                              mode=mode, width=width, height=height, attempts=attempts_completed,
+                              first_image_seconds=first_image_seconds, total_seconds=total_seconds,
+                              interrupted=interrupted, event_id=event_id)
+                st.session_state["last_result"] = result
+                st.session_state.pop("generation_error", None)
+                usage_metric.metric("내가 이미지 생성에 사용한 횟수", f"{record_my_use()}회")
+                verdict = best["verification"]
+                result["analytics_saved"] = log_analytics_event(
+                    get_anonymous_user_id(), "image_generated",
+                    verification_pass=verdict["pass"] if verdict["available"] else None,
+                    verification_score=verdict["score"] if verdict["available"] else None,
+                    attempts=attempts_completed, event_id=event_id, mode=mode,
+                    first_image_seconds=first_image_seconds, total_seconds=total_seconds)
+        except Exception as exc:
+            # Never show request URLs, headers, provider payloads or credentials.
+            error = str(exc)
+            if "안전 검사" in error:
+                st.session_state["generation_error"] = error
+            else:
+                st.session_state["generation_error"] = "생성을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요."
 
-    try:
-        started_at = time.perf_counter()
-        with st.spinner("재난문자의 인상착의를 분석하고 있습니다..."):
-            features = extract_features(message.strip(), details.strip())
+if st.session_state.get("generation_error"):
+    st.error(st.session_state["generation_error"])
 
-        origin_kr, origin_en = get_origin(features)
+result = st.session_state.get("last_result")
+features = result["features"] if result else st.session_state.get("last_analysis")
+if features:
+    st.subheader("1. 분석된 인상착의")
+    c1, c2 = st.columns(2)
+    display_keys = ["gender", "age", "height", "weight", "body_type", "skin_tone",
+                    "hair_color", "hair_length", "hair_texture", "hair_style", "top",
+                    "outerwear", "bottom", "shoes", "hat_type", "hat_color", "glasses",
+                    "facial_hair", "accessories", "special_features"]
+    for i, key in enumerate(display_keys):
+        target = c1 if i < 10 else c2
+        target.write(f"**{LABELS[key]}:** {category_text(features, key)}")
+    st.write(f"**마지막 목격 위치:** {category_text(features, 'last_seen_location')}")
+    st.write(f"**재난문자 발송 지역:** {category_text(features, 'alert_area')}")
+    if features.get("ambiguity_notes"):
+        st.info(features["ambiguity_notes"])
+    with st.expander("이미지 생성 AI에 전달하는 설명 확인"):
+        st.code(build_generation_prompt(features, ""), language=None)
+        st.caption("이름·목격 위치·발송 지역은 이미지 생성 조건에서 제외합니다.")
 
-        st.subheader("1. AI가 분석한 인상착의")
-        st.write(f"**국적:** {origin_kr}")
+if result:
+    st.subheader("2. 전신 참고 이미지와 검수 결과")
+    if (message, details, mode) != (result["message"], result["details"], result["mode"]):
+        st.info("아래는 이전 입력의 결과입니다. 변경한 입력을 반영하려면 다시 생성해 주세요.")
+    best = result["best"]
+    verdict = best["verification"]
+    st.caption(f"{result['mode']} · 첫 이미지까지 {result['first_image_seconds']:.1f}초 · "
+               f"검수 포함 총 {result['total_seconds']:.1f}초 · "
+               f"{result['width']}×{result['height']}px · 총 {result['attempts']}회 생성")
+    st.caption("각 요청에서 측정한 시간입니다. 속도·인상착의 정확도를 보장하지 않습니다.")
+    st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
+    if not verdict["available"]:
+        st.warning("자동 검수를 완료하지 못했습니다. 생성 이미지를 보존했으며 사람이 확인해야 합니다.")
+    elif verdict["pass"]:
+        st.success(f"자동 검수 통과 · 모델 평가 점수 {verdict['score']}/100")
+    else:
+        st.warning(f"자동 검수 미통과 · 모델 평가 점수 {verdict['score']}/100. 표시된 이미지를 직접 확인해 주세요.")
+    st.caption("검수 점수는 모델의 평가이며 실제 인물과의 일치율이 아닙니다.")
+    if result["interrupted"]:
+        st.warning("추가 생성이 중단되어 앞서 생성한 결과를 표시합니다.")
+    for key, label in (("missing", "누락된 항목"), ("wrong", "잘못 표현된 항목")):
+        if verdict[key]:
+            st.write(f"**{label}:** " + ", ".join(map(str, verdict[key])))
+    if analytics_enabled() and not result["analytics_saved"]:
+        st.caption("이번 결과의 전체 통계 저장에 실패했습니다. 브라우저 완료 횟수에는 반영했습니다.")
+    with st.expander("이 결과의 원문과 추가 설명"):
+        st.write(result["message"])
+        st.write(result["details"])
 
-        display_keys = [
-            "name",
-            "gender",
-            "age",
-            "height",
-            "weight",
-            "body_type",
-            "skin_tone",
-            "hair_color",
-            "hair_length",
-            "hair_texture",
-            "top",
-            "outerwear",
-            "bottom",
-            "shoes",
-            "hat_type",
-            "hat_color",
-            "glasses",
-            "facial_hair",
-            "accessories",
-            "special_features",
-        ]
-
-        c1, c2 = st.columns(2)
-
-        for i, key in enumerate(display_keys):
-            target = c1 if i < (len(display_keys) + 1) // 2 else c2
-            value = category_text(features, key)
-            target.write(f"**{LABELS[key]}:** {value}")
-
-        st.write(f"**마지막 목격 위치:** {category_text(features, 'last_seen_location')}")
-        st.write(f"**재난문자 발송 지역:** {category_text(features, 'alert_area')}")
-
-        ambiguity = features.get("ambiguity_notes", "").strip()
-        if ambiguity:
-            st.info("⚠️ **AI가 임의로 추측하지 않은 모호한 정보:** " + ambiguity)
-
-        known_count = get_known_appearance_count(features)
-        missing = get_missing_recommended(features)
-
-        if known_count < 3:
-            st.error(
-                "현재 재난문자에는 이미지를 안정적으로 생성하기 위한 인상착의 정보가 너무 적습니다."
-            )
-            if missing:
-                st.write("**추가하면 좋은 정보:** " + ", ".join(missing))
-            st.stop()
-
-        if missing:
-            st.warning(
-                "일부 권장 정보가 없습니다: "
-                + ", ".join(missing)
-                + ". 없는 정보는 AI가 사실처럼 확정하지 않습니다."
-            )
-
-        with st.expander("🔧 이미지 생성 AI에 실제로 전달되는 영어 설명 확인"):
-            st.write(features.get("image_prompt_en", ""))
-            st.write("**필수 검수 조건:**")
-            st.write(features.get("verification_requirements_en", ""))
-
-        st.divider()
-        st.subheader("2. 전신 참고 이미지 생성 및 자동 검수")
-
-        best = None
-        correction = ""
-        progress = st.progress(0)
-        status = st.empty()
-
-        attempts_allowed = FAST_ATTEMPTS if mode == "빠른 생성" else MAX_ATTEMPTS
-        width = FAST_WIDTH if mode == "빠른 생성" else DETAILED_WIDTH
-        height = FAST_HEIGHT if mode == "빠른 생성" else DETAILED_HEIGHT
-        first_image_seconds = None
-        interim_image = st.empty()
-
-        for attempt in range(1, attempts_allowed + 1):
-            status.info(f"{attempt}차 참고 이미지 생성 중...")
-
-            prompt = build_generation_prompt(
-                features,
-                origin_en,
-                correction,
-            )
-
-            image_bytes, image_b64, mime_type = generate_image(prompt, width, height)
-            if first_image_seconds is None:
-                first_image_seconds = time.perf_counter() - started_at
-            interim_image.image(
-                image_bytes,
-                caption=f"{attempt}차 생성 이미지 · AI 검수 진행 중",
-                use_container_width=True,
-            )
-
-            progress.progress(int(((attempt - 0.5) / attempts_allowed) * 100))
-
-            status.info(f"{attempt}차 이미지가 입력 인상착의와 맞는지 검수 중...")
-
-            verification = verify_image(image_b64, mime_type, features)
-
-            candidate = {
-                "attempt": attempt,
-                "image": image_bytes,
-                "verification": verification,
-            }
-
-            if best is None or verification["score"] > best["verification"]["score"]:
-                best = candidate
-
-            if verification["pass"]:
-                best = candidate
-                break
-
-            correction = verification["feedback_en"] or (
-                "Generate a new photorealistic contemporary reference photograph. "
-                "Correct every failed explicit appearance requirement. "
-                "No text, calligraphy, traditional clothing, costume, or illustration."
-            )
-
-            progress.progress(int((attempt / attempts_allowed) * 100))
-
-        progress.progress(100)
-        status.empty()
-        interim_image.empty()
-
-        if best is None:
-            raise RuntimeError("최종 이미지를 생성하지 못했습니다.")
-
-        verdict = best["verification"]
-
-        usage_metric.metric("내가 이미지 생성에 사용한 횟수", f"{record_my_use()}회")
-        total_seconds = time.perf_counter() - started_at
-        st.caption(
-            f"첫 이미지 생성까지 {first_image_seconds:.1f}초 · "
-            f"검수 포함 총 {total_seconds:.1f}초 · "
-            f"{width}×{height}px · 총 {attempt}회 생성"
-        )
-
-        st.image(
-            best["image"],
-            caption=(f"{best['attempt']}차 생성 결과 · 자동 검수 점수 {verdict['score']}/100"),
-            use_container_width=True,
-        )
-
-        if verdict["pass"]:
-            st.success("자동 검수를 통과한 이미지입니다.")
-        else:
-            st.warning(
-                f"{attempts_allowed}회 안에 모든 조건을 통과하지 못해 가장 높은 점수의 "
-                "이미지를 표시했습니다. 최종 사용 전 사람이 확인해야 합니다."
-            )
-
-        if verdict["missing"]:
-            st.write("**누락된 항목:** " + ", ".join(map(str, verdict["missing"])))
-
-        if verdict["wrong"]:
-            st.write("**잘못 표현된 항목:** " + ", ".join(map(str, verdict["wrong"])))
-
-        with st.expander("원문 재난문자 보기"):
-            st.write(message)
-            if details.strip():
-                st.markdown("**추가 상세 설명**")
-                st.write(details)
-
-        if st.button("다시 생성하기", type="primary", use_container_width=True):
-            st.session_state["regenerate_requested"] = True
-            st.rerun()
-
-    except Exception as exc:
-        st.error(f"오류가 발생했습니다: {exc}")
+if result or st.session_state.get("generation_error"):
+    if st.button("다시 생성하기", type="primary", use_container_width=True):
+        st.session_state["regenerate_requested"] = True
+        st.rerun()

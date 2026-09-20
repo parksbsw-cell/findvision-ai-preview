@@ -2,7 +2,7 @@ name: Preview checks
 
 on:
   push:
-    branches: [feat/isolated-streamlit-preview]
+    branches: [main, feat/isolated-streamlit-preview]
   pull_request:
 
 permissions:
@@ -21,3 +21,4 @@ jobs:
       - run: python -m py_compile app.py preview_logic.py
       - run: ruff check .
       - run: python -m pytest -q
+
