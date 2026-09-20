@@ -594,6 +594,7 @@ feedback_en must tell the image generator exactly what to correct.
     if not parsed:
         return {
             "score": 0,
+            "available": False,
             "pass": False,
             "missing": [],
             "wrong": ["검수 결과를 읽지 못함"],
@@ -965,7 +966,6 @@ if run_requested:
                     status.info(f"{attempt}차 이미지 검수 중...")
                     try:
                         verdict = verify_image(image_b64, mime_type, features)
-                        verdict["available"] = "raw" not in verdict or bool(parse_json_loose(verdict["raw"]))
                     except Exception:
                         verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
                                    "feedback_en": "", "available": False}

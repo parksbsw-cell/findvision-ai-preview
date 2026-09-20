@@ -6,7 +6,7 @@ import pytest
 import requests
 from streamlit.testing.v1 import AppTest
 
-from preview_logic import category_text, enhance_features_from_text
+from preview_logic import category_text, enhance_features_from_text, verification_result
 
 APP = Path(__file__).resolve().parents[1] / "app.py"
 PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg=="
@@ -156,3 +156,8 @@ def test_flagged_response_stops_without_retry_or_secret_output(monkeypatch):
     assert "안전 검사" in app.error[0].value
     assert "private-value" not in app.error[0].value
     assert any(b.label == "다시 생성하기" for b in app.button)
+
+
+def test_incomplete_vision_json_is_unavailable_not_zero_accuracy():
+    assert not verification_result({"answer": "Looks good"})["available"]
+    assert not verification_result({"score": "unknown", "pass": False, "missing": [], "wrong": []})["available"]
