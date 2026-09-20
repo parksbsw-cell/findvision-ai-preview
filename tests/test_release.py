@@ -72,15 +72,14 @@ def test_retry_survives_reruns_without_duplicate_count(monkeypatch):
     app, calls = setup_app(monkeypatch)
     assert not app.exception
     assert app.metric[0].value == "1회"
-    assert app.session_state["last_result"]["best"]["verification"]["available"] is True
-    assert app.session_state["last_result"]["best"]["verification"]["pass"] is True
+    assert app.session_state["last_result"]["best"]["verification"]["skipped"] is True
     app.run()
-    assert len(calls) == 3
+    assert len(calls) == 2
     assert app.metric[0].value == "1회"
     next(b for b in app.button if b.label == "다시 생성하기").click().run()
     assert not app.exception
     assert app.metric[0].value == "2회"
-    assert len(calls) == 6
+    assert len(calls) == 4
     prompt = next(k["files"]["prompt"][1] for u, k in calls if "flux" in u)
     assert "서울역" not in prompt and "Seoul Station" not in prompt
     assert "two-block" in prompt and "jeans" in prompt

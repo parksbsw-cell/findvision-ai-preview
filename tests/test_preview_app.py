@@ -92,7 +92,7 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     assert "모델 평가 점수" not in visible_messages
     assert "검수 점수" not in visible_messages
     assert any(button.label == "다시 생성하기" for button in app.button)
-    assert len(calls) == 3  # one extraction, one image, one vision check
+    assert len(calls) == 2  # one extraction and one image; fast mode skips vision
 
 
 def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypatch):
@@ -138,6 +138,7 @@ def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypat
     monkeypatch.setattr(requests, "post", fake_post)
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=10).run()
     app.text_area[0].set_value("가상 예시: 남성, 빨간 반팔티, 검은 긴바지, 검은 크록스")
+    app.radio[0].set_value("정밀 생성")
     app.button[0].click().run()
 
     assert not app.exception

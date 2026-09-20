@@ -863,7 +863,7 @@ st.caption("이 브라우저에 저장된 완료 횟수입니다. 다른 기기�
 
 st.caption(
     "상세 실종 재난문자를 AI가 분석하고, 인상착의를 반영한 "
-    "현대적인 전신 참고 이미지를 생성한 뒤 Vision AI가 다시 검수합니다."
+    "현대적인 전신 참고 이미지를 생성합니다. 정밀 생성은 Vision AI 검수와 재생성을 진행합니다."
 )
 
 st.warning(
@@ -872,8 +872,9 @@ st.warning(
 )
 
 
-with st.expander("🔒 팀 관리자용 사용 통계", expanded=False):
-    show_admin_analytics()
+if analytics_enabled():
+    with st.expander("🔒 팀 관리자용 사용 통계", expanded=False):
+        show_admin_analytics()
 
 with st.expander("📌 권장 상세 재난문자 기준", expanded=True):
     st.markdown(
@@ -909,7 +910,7 @@ mode = st.radio(
     "생성 방식",
     ["빠른 생성", "정밀 생성"],
     horizontal=True,
-    help="빠른 생성은 작은 이미지 1회+검수 1회, 정밀 생성은 큰 이미지로 최대 3회 재시도합니다.",
+    help="빠른 생성은 작은 이미지 1회를 바로 표시하고, 정밀 생성은 검수하면서 큰 이미지로 최대 3회 생성합니다.",
 )
 
 
@@ -929,7 +930,7 @@ if run_requested:
             with st.spinner("인상착의를 분석하고 있습니다..."):
                 features = extract_features(message.strip())
             if get_known_appearance_count(features) < 3:
-                st.warning("인상착의 정보가 부족합니다. 옷·머리·신발 등 확인된 특징을 추가해 주세요.")
+                st.warning("인상착의 정보가 부족합니다. 재난문자 원문에 옷·머리·신발 등 확인된 특징을 포함해 주세요.")
             else:
                 st.session_state["last_analysis"] = features
                 best = None
@@ -955,19 +956,23 @@ if run_requested:
                     attempts_completed += 1
                     if first_image_seconds is None:
                         first_image_seconds = time.perf_counter() - started_at
-                    interim.image(image_bytes, caption="생성 완료 · 자동 검수 중", use_container_width=True)
-                    status.info(f"{attempt}차 이미지 검수 중...")
-                    try:
-                        verdict = verify_image(image_b64, mime_type, features)
-                    except Exception:
+                    if mode == "빠른 생성":
                         verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
-                                   "feedback_en": "", "available": False}
+                                   "feedback_en": "", "available": False, "skipped": True}
+                    else:
+                        interim.image(image_bytes, caption="생성 완료 · 자동 검수 중", use_container_width=True)
+                        status.info(f"{attempt}차 이미지 검수 중...")
+                        try:
+                            verdict = verify_image(image_b64, mime_type, features)
+                        except Exception:
+                            verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
+                                       "feedback_en": "", "available": False, "skipped": False}
                     candidate = {"attempt": attempt, "image": image_bytes, "verification": verdict}
                     if best is None or (verdict["pass"], verdict["available"], verdict["score"]) > (
                         best["verification"]["pass"], best["verification"]["available"], best["verification"]["score"]
                     ):
                         best = candidate
-                    if verdict["pass"] or not verdict["available"]:
+                    if verdict.get("skipped") or verdict["pass"] or not verdict["available"]:
                         break
                     correction = verdict["feedback_en"]
                 status.empty()
@@ -1025,12 +1030,15 @@ if result:
         st.info("아래는 이전 입력의 결과입니다. 변경한 입력을 반영하려면 다시 생성해 주세요.")
     best = result["best"]
     verdict = best["verification"]
+    duration_label = "총 생성 시간" if result["mode"] == "빠른 생성" else "검수 포함 총"
     st.caption(f"{result['mode']} · 첫 이미지까지 {result['first_image_seconds']:.1f}초 · "
-               f"검수 포함 총 {result['total_seconds']:.1f}초 · "
+               f"{duration_label} {result['total_seconds']:.1f}초 · "
                f"{result['width']}×{result['height']}px · 총 {result['attempts']}회 생성")
     st.caption("각 요청에서 측정한 시간입니다. 속도·인상착의 정확도를 보장하지 않습니다.")
     st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
-    if not verdict["available"]:
+    if verdict.get("skipped"):
+        st.info("빠른 생성은 속도를 위해 자동 검수를 생략했습니다. 결과를 직접 확인해 주세요.")
+    elif not verdict["available"]:
         st.warning("자동 검수를 완료하지 못했습니다. 생성 이미지를 보존했으며 사람이 확인해야 합니다.")
     elif verdict["pass"]:
         st.success("자동 검수를 통과한 이미지입니다.")

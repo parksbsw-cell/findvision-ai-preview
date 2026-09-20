@@ -17,13 +17,11 @@ def test_analysis_message_contains_only_the_original_alert():
     assert "추가 상세 설명" not in text
 
 
-def test_brand_and_hair_style_use_information_none():
+def test_brand_metadata_is_shown_without_repeating_hair_style():
     assert category_text({"outerwear": "파란 점퍼"}, "outerwear") == (
         "파란 점퍼 (브랜드: 정보 없음)"
     )
-    assert category_text({"hair_texture": "곱슬", "hair_style": "단발"}, "hair_texture") == (
-        "곱슬 (스타일: 단발)"
-    )
+    assert category_text({"hair_texture": "곱슬", "hair_style": "단발"}, "hair_texture") == "곱슬"
 
 
 def test_outerwear_is_a_valid_appearance_field():
@@ -110,3 +108,15 @@ def test_body_type_accessories_and_shoe_brand_are_recovered():
     assert "작은가방" in recovered["accessories"]
     assert "시계" in recovered["accessories"]
     assert recovered["last_seen_location"] == "아산스마트팩토리마이스터고등학교"
+
+
+def test_model_cannot_copy_clothing_into_accessories():
+    original = "남성, 회색 캡모자, 빨간색 반팔티, 검은색 긴바지, 검은색 크록스"
+    model = {"accessories": "회색 캡모자 빨간색 반팔티 검은색 긴바지 검은색 크록스"}
+    assert enhance_features_from_text(model, original, "")["accessories"] == ""
+
+
+def test_only_explicit_accessories_survive_model_output():
+    original = "검은색 반팔티, 작은 가방, 휴대폰, 손목 시계 착용"
+    model = {"accessories": "검은색 반팔티 작은 가방 휴대폰 시계"}
+    assert enhance_features_from_text(model, original, "")["accessories"] == "작은가방 휴대폰 시계"

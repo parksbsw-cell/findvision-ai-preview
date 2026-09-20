@@ -22,9 +22,6 @@ APPEARANCE_FIELDS = (
     "hat_color", "glasses", "facial_hair", "accessories", "special_features",
 )
 METADATA = {
-    "hair_color": ("hair_style", "스타일"),
-    "hair_length": ("hair_style", "스타일"),
-    "hair_texture": ("hair_style", "스타일"),
     "top": ("top_brand", "브랜드"),
     "outerwear": ("outerwear_brand", "브랜드"),
     "bottom": ("bottom_brand", "브랜드"),
@@ -135,6 +132,29 @@ def _explicit_brand(text: str, key: str) -> str | None:
     return None
 
 
+def _explicit_accessories(text: str) -> list[str]:
+    """Return only accessories that are explicitly present in user text."""
+    if re.search(r"(?:소지품|액세서리)\s*[:：]?\s*(?:없음|없다|없)", text):
+        return []
+    found: list[str] = []
+    for pattern, label in (
+        (r"작은\s*가방", "작은가방"), (r"백팩", "백팩"),
+        (r"가방", "가방"), (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
+        (r"지갑", "지갑"), (r"우산", "우산"),
+        (r"목걸이", "목걸이"), (r"팔찌", "팔찌"), (r"시계", "시계"),
+        (r"소지품\s*[:：]?\s*([가-힣A-Za-z0-9]+)", ""),
+    ):
+        if label == "가방" and re.search(r"작은\s*가방", text):
+            continue
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        value = match.group(1) if not label and match.groups() else label
+        if value and value not in found:
+            found.append(value)
+    return found
+
+
 def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = False) -> None:
     if not text.strip():
         return
@@ -213,19 +233,7 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         features["glasses"] = "안경"
     if re.search(r"수염\s*없", text) and (overwrite or not _has_value(features, "facial_hair")):
         features["facial_hair"] = "없음"
-    accessory_terms: list[str] = []
-    for pattern, label in (
-        (r"작은\s*가방", "작은가방"), (r"백팩", "백팩"),
-        (r"가방", "가방"), (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
-        (r"지갑", "지갑"), (r"우산", "우산"),
-        (r"목걸이", "목걸이"), (r"팔찌", "팔찌"),
-        (r"시계", "시계"), (r"소지품\s*([가-힣A-Za-z0-9]+)", ""),
-    ):
-        match = re.search(pattern, text)
-        if match:
-            value = match.group(1) if not label and match.groups() else label
-            if value and value not in accessory_terms:
-                accessory_terms.append(value)
+    accessory_terms = _explicit_accessories(text)
     if accessory_terms and (overwrite or not _has_value(features, "accessories")):
         features["accessories"] = _merge_words(str(features.get("accessories", "") or ""), *accessory_terms)
     location = re.search(r"(?:마지막\s*(?:목격|확인)\s*(?:위치|장소)|목격\s*(?:위치|장소))\s*[:：은는]?\s*([^,.\n]+)", text)
@@ -256,6 +264,11 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
         _apply_text_facts(explicit, original)
         _apply_text_facts(explicit, details, overwrite=True)
         enhanced[key] = explicit.get(key, "")
+    # Do not trust free-form model output for this category. Clothing and hats
+    # are commonly copied into accessories even when the user stated none.
+    enhanced["accessories"] = _merge_words(
+        *_explicit_accessories(original), *_explicit_accessories(details)
+    )
     # A last-seen place alone is never evidence of the sender's region.
     if not re.search(r"발송\s*지역|^\s*\[", original + "\n" + details):
         enhanced["alert_area"] = ""
