@@ -472,7 +472,7 @@ def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, st
 # =========================================================
 
 
-def extract_text_from_result(result: Any) -> str:
+def extract_text_from_result(result: Any, depth: int = 0) -> str:
     if isinstance(result, str):
         return result
 
@@ -481,6 +481,8 @@ def extract_text_from_result(result: Any) -> str:
             value = result.get(key)
             if isinstance(value, str):
                 return value
+            if isinstance(value, dict) and depth < 4:
+                return extract_text_from_result(value, depth + 1)
 
     return json.dumps(result, ensure_ascii=False)
 
@@ -1039,9 +1041,6 @@ if result:
     st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
     if not verdict["available"]:
         st.warning("자동 검수를 완료하지 못했습니다. 생성 이미지를 보존했으며 사람이 확인해야 합니다.")
-        if verdict.get("raw"):
-            with st.expander("자동 검수 응답 확인"):
-                st.text(verdict["raw"][:4000])
     elif verdict["pass"]:
         st.success(f"자동 검수 통과 · 모델 평가 점수 {verdict['score']}/100")
     else:
