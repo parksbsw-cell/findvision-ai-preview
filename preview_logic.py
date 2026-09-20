@@ -358,10 +358,17 @@ def normalize_bool(value: Any) -> bool:
 
 
 def verification_result(parsed: dict[str, Any], raw: str = "", minimum_score: int = 80) -> dict:
+    available = (
+        "score" in parsed and "pass" in parsed
+        and isinstance(parsed.get("missing"), list)
+        and isinstance(parsed.get("wrong"), list)
+        and isinstance(parsed.get("pass"), (bool, str, int))
+    )
     try:
         score = max(0, min(int(parsed.get("score", 0)), 100))
     except (TypeError, ValueError):
         score = 0
+        available = False
     missing = parsed.get("missing") or []
     wrong = parsed.get("wrong") or []
     missing = missing if isinstance(missing, list) else [str(missing)]
@@ -373,7 +380,8 @@ def verification_result(parsed: dict[str, Any], raw: str = "", minimum_score: in
         wrong.append("이미지 안에 글자가 있음")
     return {
         "score": score,
-        "pass": normalize_bool(parsed.get("pass")) and score >= minimum_score and not missing and not wrong,
+        "pass": available and normalize_bool(parsed.get("pass")) and score >= minimum_score and not missing and not wrong,
+        "available": available,
         "missing": missing, "wrong": wrong, "has_text": has_text,
         "feedback_en": str(parsed.get("feedback_en", "") or "").strip(),
         "raw": raw,
