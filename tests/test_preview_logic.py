@@ -11,11 +11,10 @@ from preview_logic import (
 )
 
 
-def test_raw_alert_and_details_remain_separate():
-    text = analysis_message(" [원문] 빨간 상의 ", " 겉옷은 파란 점퍼 ")
+def test_analysis_message_contains_only_the_original_alert():
+    text = analysis_message(" [원문] 빨간 상의 ")
     assert "[원문] 빨간 상의" in text
-    assert "겉옷은 파란 점퍼" in text
-    assert text.index("[원문]") < text.index("겉옷은")
+    assert "추가 상세 설명" not in text
 
 
 def test_brand_and_hair_style_use_information_none():

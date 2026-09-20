@@ -205,7 +205,7 @@ def cloudflare_multipart_request(model: str, fields: dict, timeout: int = 180) -
 # =========================================================
 
 
-def extract_features(original: str, details: str) -> dict:
+def extract_features(original: str) -> dict:
     schema = {
         "type": "object",
         "properties": {key: {"type": "string"} for key in FIELDS},
@@ -214,14 +214,13 @@ def extract_features(original: str, details: str) -> dict:
     }
 
     system_prompt = """
-너는 실종 재난문자의 인상착의 사실 추출기다. 원문과 사용자가 추가한 상세 설명을 구분한다.
+너는 실종 재난문자의 인상착의 사실 추출기다.
 
 절대 원칙:
 - 원문에 실제로 있는 정보만 사용한다.
 - 없는 정보는 빈 문자열("")로 둔다.
 - 모호한 정보를 추측하지 않는다.
 - 이름만 보고 국적, 피부톤, 머리 특징을 추측하지 않는다.
-- 원문과 추가 설명이 충돌하면 사용자가 명시한 추가 설명을 우선하고 ambiguity_notes에 충돌을 기록한다.
 - 옷·모자·신발 브랜드, 머리 스타일은 명시된 경우에만 기입한다. 없으면 빈 문자열로 둔다.
 - last_seen_location은 마지막 목격 장소, alert_area는 재난문자 발송 지역이다. 장소를 외형으로 해석하지 않는다.
 
@@ -263,7 +262,7 @@ verification_requirements_en 규칙:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": analysis_message(original, details),
+                    "content": analysis_message(original),
                 },
             ],
             "temperature": 0.0,
@@ -285,7 +284,7 @@ verification_requirements_en 규칙:
         raise RuntimeError("AI 분석 결과가 올바른 형식이 아닙니다.")
 
     features = {key: str(parsed.get(key, "") or "").strip() for key in FIELDS}
-    features = enhance_features_from_text(features, original, details)
+    features = enhance_features_from_text(features, original, "")
     return sync_prompt_text_from_structured_features(features)
 
 
@@ -906,14 +905,6 @@ message = st.text_area(
     max_chars=1500,
 )
 
-details = st.text_area(
-    "추가 상세 설명 — 원문 아래에 작성",
-    value="",
-    placeholder="예: 마지막 목격 위치, 외투 색상·종류, 옷 브랜드, 머리 스타일 등 확인된 추가 정보",
-    height=110,
-    max_chars=1000,
-)
-
 mode = st.radio(
     "생성 방식",
     ["빠른 생성", "정밀 생성"],
@@ -936,7 +927,7 @@ if run_requested:
         try:
             started_at = time.perf_counter()
             with st.spinner("인상착의를 분석하고 있습니다..."):
-                features = extract_features(message.strip(), details.strip())
+                features = extract_features(message.strip())
             if get_known_appearance_count(features) < 3:
                 st.warning("인상착의 정보가 부족합니다. 옷·머리·신발 등 확인된 특징을 추가해 주세요.")
             else:
@@ -983,7 +974,7 @@ if run_requested:
                 interim.empty()
                 total_seconds = time.perf_counter() - started_at
                 event_id = str(uuid.uuid4())
-                result = dict(best=best, features=features, message=message, details=details,
+                result = dict(best=best, features=features, message=message,
                               mode=mode, width=width, height=height, attempts=attempts_completed,
                               first_image_seconds=first_image_seconds, total_seconds=total_seconds,
                               interrupted=interrupted, event_id=event_id)
@@ -1030,7 +1021,7 @@ if features:
 
 if result:
     st.subheader("2. 전신 참고 이미지와 검수 결과")
-    if (message, details, mode) != (result["message"], result["details"], result["mode"]):
+    if (message, mode) != (result["message"], result["mode"]):
         st.info("아래는 이전 입력의 결과입니다. 변경한 입력을 반영하려면 다시 생성해 주세요.")
     best = result["best"]
     verdict = best["verification"]
@@ -1042,10 +1033,9 @@ if result:
     if not verdict["available"]:
         st.warning("자동 검수를 완료하지 못했습니다. 생성 이미지를 보존했으며 사람이 확인해야 합니다.")
     elif verdict["pass"]:
-        st.success(f"자동 검수 통과 · 모델 평가 점수 {verdict['score']}/100")
+        st.success("자동 검수를 통과한 이미지입니다.")
     else:
-        st.warning(f"자동 검수 미통과 · 모델 평가 점수 {verdict['score']}/100. 표시된 이미지를 직접 확인해 주세요.")
-    st.caption("검수 점수는 모델의 평가이며 실제 인물과의 일치율이 아닙니다.")
+        st.warning("자동 검수를 통과하지 못했습니다. 표시된 이미지를 직접 확인해 주세요.")
     if result["interrupted"]:
         st.warning("추가 생성이 중단되어 앞서 생성한 결과를 표시합니다.")
     for key, label in (("missing", "누락된 항목"), ("wrong", "잘못 표현된 항목")):
@@ -1053,9 +1043,8 @@ if result:
             st.write(f"**{label}:** " + ", ".join(map(str, verdict[key])))
     if analytics_enabled() and not result["analytics_saved"]:
         st.caption("이번 결과의 전체 통계 저장에 실패했습니다. 브라우저 완료 횟수에는 반영했습니다.")
-    with st.expander("이 결과의 원문과 추가 설명"):
+    with st.expander("이 결과의 재난문자 원문"):
         st.write(result["message"])
-        st.write(result["details"])
 
 if result or st.session_state.get("generation_error"):
     if st.button("다시 생성하기", type="primary", use_container_width=True):

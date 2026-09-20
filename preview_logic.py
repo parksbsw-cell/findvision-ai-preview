@@ -55,17 +55,11 @@ CLOTHES = {
 }
 
 
-def analysis_message(original: str, details: str) -> str:
+def analysis_message(original: str) -> str:
     original = original.strip()
-    details = details.strip()
     if not original:
         raise ValueError("실종 재난문자 원문을 입력해 주세요.")
-    return (
-        "[실종 재난문자 원문 — 수정하지 않은 텍스트]\n"
-        f"{original}\n\n"
-        "[사용자가 추가한 상세 설명 — 원문과 충돌하면 이 설명을 우선]\n"
-        f"{details if details else '추가 설명 없음'}"
-    )
+    return "[실종 재난문자 원문 — 수정하지 않은 텍스트]\n" + original
 
 
 def _has_value(features: dict[str, Any], key: str) -> bool:

@@ -74,9 +74,8 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     monkeypatch.setattr(requests, "post", fake_post)
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=10).run()
     assert not app.exception
-    assert len(app.text_area) == 2
+    assert len(app.text_area) == 1
     app.text_area[0].set_value("원문: 남성, 빨간 반팔티, 검은 긴바지")
-    app.text_area[1].set_value("추가: 흰색 외투, 서울역 마지막 목격")
     app.button[0].click().run()
 
     assert not app.exception
@@ -86,6 +85,12 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     assert "흰색 외투 (브랜드: 정보 없음)" in rendered
     assert "겉옷 여밈" not in rendered
     assert "서울역" in rendered
+    visible_messages = "\n".join(
+        item.value for group in (app.markdown, app.caption, app.success, app.warning) for item in group
+    )
+    assert "추가 상세 설명" not in visible_messages
+    assert "모델 평가 점수" not in visible_messages
+    assert "검수 점수" not in visible_messages
     assert any(button.label == "다시 생성하기" for button in app.button)
     assert len(calls) == 3  # one extraction, one image, one vision check
 
