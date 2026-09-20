@@ -1039,6 +1039,9 @@ if result:
     st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
     if not verdict["available"]:
         st.warning("자동 검수를 완료하지 못했습니다. 생성 이미지를 보존했으며 사람이 확인해야 합니다.")
+        if verdict.get("raw"):
+            with st.expander("자동 검수 응답 확인"):
+                st.text(verdict["raw"][:4000])
     elif verdict["pass"]:
         st.success(f"자동 검수 통과 · 모델 평가 점수 {verdict['score']}/100")
     else:
