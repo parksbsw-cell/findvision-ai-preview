@@ -179,3 +179,15 @@ def test_evidence_and_contradiction_detection():
     warnings = find_contradictions(text)
     assert any("직모와 곱슬" in warning for warning in warnings)
     assert any("안경 착용 여부" in warning for warning in warnings)
+
+
+def test_generation_defaults_to_korean_but_respects_explicit_nationality(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    from app import build_generation_prompt
+
+    base = {"gender": "남성", "top": "빨간색 반팔티", "bottom": "검은색 바지", "shoes": "운동화"}
+    assert "depict the fictional person as Korean" in build_generation_prompt(base, "")
+    assert "Depict the fictional person as Japanese" in build_generation_prompt(
+        {**base, "nationality": "일본인"}, ""
+    )

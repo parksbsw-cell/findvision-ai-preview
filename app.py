@@ -53,7 +53,7 @@ GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
 
 EDITABLE_FIELDS = [
-    "gender", "age", "height", "weight", "body_type", "skin_tone",
+    "gender", "age", "height", "weight", "body_type", "nationality", "skin_tone",
     "hair_color", "hair_length", "hair_texture", "hair_style", "top", "top_brand",
     "outerwear", "outerwear_brand", "bottom", "bottom_brand", "shoes", "shoes_brand",
     "hat_type", "hat_color", "hat_brand", "glasses", "facial_hair", "accessories",
@@ -443,12 +443,24 @@ def build_generation_prompt(
     description = features["image_prompt_en"]
     if not description:
         raise RuntimeError("이미지 생성에 필요한 인상착의 정보가 없습니다.")
+    nationality = str(features.get("nationality", "") or "").strip()
+    nationality_en = {
+        "대한민국": "Korean", "한국": "Korean", "한국인": "Korean",
+        "미국": "American", "미국인": "American", "일본": "Japanese", "일본인": "Japanese",
+        "중국": "Chinese", "중국인": "Chinese",
+    }.get(nationality, nationality or "Korean")
+    origin_instruction = (
+        f"Depict the fictional person as {nationality_en}. "
+        if nationality else
+        "No nationality was stated; use the service default and depict the fictional person as Korean. "
+    )
     layers = ("Wear the stated outerwear over the inner top. A closed outer layer may hide the top."
               if features.get("outerwear") else "No outerwear is specified; do not add a coat or jacket.")
     prompt = (
         "Create one photorealistic full-body appearance reference of a fictional person. "
         "This is an illustration of described clothing and build, not an identified person's face. "
         "Standing front view, head and feet visible, plain light background, contemporary clothing. "
+        + origin_instruction +
         "Match only the stated appearance facts; unspecified details are illustrative. "
         "No text, logos or watermark. " + layers + "\n" + description
     )
