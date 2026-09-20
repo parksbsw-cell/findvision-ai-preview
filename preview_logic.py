@@ -155,6 +155,20 @@ def _explicit_accessories(text: str) -> list[str]:
     return found
 
 
+def _explicit_facial_hair(text: str) -> str:
+    if re.search(r"수염\s*[:：]?\s*(?:없음|없다|없는|없)", text):
+        return "없음"
+    for pattern, label in (
+        (r"콧수염", "콧수염"),
+        (r"턱수염", "턱수염"),
+        (r"구레나룻", "구레나룻"),
+        (r"수염\s*(?:있음|있다|있는|기른|남)", "수염"),
+    ):
+        if re.search(pattern, text):
+            return label
+    return ""
+
+
 def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = False) -> None:
     if not text.strip():
         return
@@ -269,6 +283,7 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     enhanced["accessories"] = _merge_words(
         *_explicit_accessories(original), *_explicit_accessories(details)
     )
+    enhanced["facial_hair"] = _explicit_facial_hair(details) or _explicit_facial_hair(original)
     # A last-seen place alone is never evidence of the sender's region.
     if not re.search(r"발송\s*지역|^\s*\[", original + "\n" + details):
         enhanced["alert_area"] = ""

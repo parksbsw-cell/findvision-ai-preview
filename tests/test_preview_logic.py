@@ -120,3 +120,9 @@ def test_only_explicit_accessories_survive_model_output():
     original = "검은색 반팔티, 작은 가방, 휴대폰, 손목 시계 착용"
     model = {"accessories": "검은색 반팔티 작은 가방 휴대폰 시계"}
     assert enhance_features_from_text(model, original, "")["accessories"] == "작은가방 휴대폰 시계"
+
+
+def test_model_cannot_copy_hair_into_facial_hair():
+    model = {"facial_hair": "짧은 검은색 곱슬머리"}
+    assert enhance_features_from_text(model, "짧은 검은색 곱슬머리", "")["facial_hair"] == ""
+    assert enhance_features_from_text(model, "짧은 머리, 수염 없음", "")["facial_hair"] == "없음"
