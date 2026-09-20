@@ -15,8 +15,9 @@ from streamlit_cookies_controller import CookieController
 from preview_logic import (
     BRANDS,
     analysis_message,
-    category_text,
     enhance_features_from_text,
+    evidence_for_field,
+    find_contradictions,
     image_mime,
     known_appearance_count,
     missing_recommended,
@@ -47,6 +48,17 @@ FAST_WIDTH = 512
 FAST_HEIGHT = 768
 DETAILED_WIDTH = 768
 DETAILED_HEIGHT = 1024
+GENERATION_LIMIT = 5
+GENERATION_WINDOW_SECONDS = 60 * 60
+GENERATION_COOLDOWN_SECONDS = 10
+
+EDITABLE_FIELDS = [
+    "gender", "age", "height", "weight", "body_type", "skin_tone",
+    "hair_color", "hair_length", "hair_texture", "hair_style", "top", "top_brand",
+    "outerwear", "outerwear_brand", "bottom", "bottom_brand", "shoes", "shoes_brand",
+    "hat_type", "hat_color", "hat_brand", "glasses", "facial_hair", "accessories",
+    "special_features", "last_seen_location", "alert_area",
+]
 
 FIELDS = [
     "name",
@@ -839,6 +851,76 @@ def record_my_use() -> int:
     return count
 
 
+def generation_limit_message(now: float | None = None) -> str:
+    now = now or time.time()
+    recent = [float(item) for item in st.session_state.get("generation_timestamps", [])
+              if now - float(item) < GENERATION_WINDOW_SECONDS]
+    st.session_state["generation_timestamps"] = recent
+    if recent and now - recent[-1] < GENERATION_COOLDOWN_SECONDS:
+        wait = max(1, int(GENERATION_COOLDOWN_SECONDS - (now - recent[-1])))
+        return f"연속 요청을 막기 위해 {wait}초 뒤 다시 시도해 주세요."
+    if len(recent) >= GENERATION_LIMIT:
+        return "한 시간에 최대 5회까지 생성할 수 있습니다. 잠시 뒤 다시 시도해 주세요."
+    return ""
+
+
+def record_generation_attempt(now: float | None = None) -> None:
+    st.session_state.setdefault("generation_timestamps", []).append(now or time.time())
+
+
+def generate_reference_result(features: dict, message: str, mode: str) -> dict:
+    started_at = time.perf_counter()
+    best = None
+    correction = ""
+    attempts_allowed = FAST_ATTEMPTS if mode == "빠른 생성" else MAX_ATTEMPTS
+    width = FAST_WIDTH if mode == "빠른 생성" else DETAILED_WIDTH
+    height = FAST_HEIGHT if mode == "빠른 생성" else DETAILED_HEIGHT
+    first_image_seconds = None
+    attempts_completed = 0
+    interrupted = False
+    status = st.empty()
+    interim = st.empty()
+    for attempt in range(1, attempts_allowed + 1):
+        status.info(f"{attempt}차 이미지 생성 중...")
+        prompt = build_generation_prompt(features, "", correction)
+        try:
+            image_bytes, image_b64, mime_type = generate_image(prompt, width, height)
+        except Exception:
+            if best is None:
+                raise
+            interrupted = True
+            break
+        attempts_completed += 1
+        if first_image_seconds is None:
+            first_image_seconds = time.perf_counter() - started_at
+        if mode == "빠른 생성":
+            verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
+                       "feedback_en": "", "available": False, "skipped": True}
+        else:
+            interim.image(image_bytes, caption="생성 완료 · 자동 검수 중", use_container_width=True)
+            status.info(f"{attempt}차 이미지 검수 중...")
+            try:
+                verdict = verify_image(image_b64, mime_type, features)
+            except Exception:
+                verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
+                           "feedback_en": "", "available": False, "skipped": False}
+        candidate = {"attempt": attempt, "image": image_bytes, "mime_type": mime_type,
+                     "verification": verdict}
+        if best is None or (verdict["pass"], verdict["available"], verdict["score"]) > (
+                best["verification"]["pass"], best["verification"]["available"],
+                best["verification"]["score"]):
+            best = candidate
+        if verdict.get("skipped") or verdict["pass"] or not verdict["available"]:
+            break
+        correction = verdict["feedback_en"]
+    status.empty()
+    interim.empty()
+    total_seconds = time.perf_counter() - started_at
+    return dict(best=best, features=features, message=message, mode=mode, width=width,
+                height=height, attempts=attempts_completed, first_image_seconds=first_image_seconds,
+                total_seconds=total_seconds, interrupted=interrupted, event_id=str(uuid.uuid4()))
+
+
 # =========================================================
 # UI
 # =========================================================
@@ -899,134 +981,110 @@ with st.expander("📌 권장 상세 재난문자 기준", expanded=True):
     )
 
 message = st.text_area(
-    "실종 재난문자 원문 — 그대로 붙여 넣기",
-    value="",
+    "실종 재난문자 원문 — 그대로 붙여 넣기", value="",
     placeholder="받은 실종 재난문자 원문을 수정하지 않고 붙여 넣으세요.",
-    height=170,
-    max_chars=1500,
+    height=170, max_chars=1500,
+)
+st.info(
+    "입력 내용은 AI 분석과 이미지 생성을 위해 Cloudflare Workers AI로 전송됩니다. "
+    "이 앱의 통계 DB에는 원문과 생성 이미지를 저장하지 않습니다. 테스트에는 가상 예시를 사용하세요."
 )
 
-mode = st.radio(
-    "생성 방식",
-    ["빠른 생성", "정밀 생성"],
-    horizontal=True,
-    help="빠른 생성은 작은 이미지 1회를 바로 표시하고, 정밀 생성은 검수하면서 큰 이미지로 최대 3회 생성합니다.",
-)
-
-
-primary_clicked = st.button(
-    "AI 분석 및 참고 이미지 생성",
-    type="primary",
-    use_container_width=True,
-)
-run_requested = primary_clicked or st.session_state.pop("regenerate_requested", False)
-
-if run_requested:
+if st.button("1단계: AI 인상착의 분석", type="primary", use_container_width=True):
     if not message.strip():
         st.warning("실종 재난문자를 입력해 주세요.")
     else:
         try:
-            started_at = time.perf_counter()
             with st.spinner("인상착의를 분석하고 있습니다..."):
                 features = extract_features(message.strip())
-            if get_known_appearance_count(features) < 3:
-                st.warning("인상착의 정보가 부족합니다. 재난문자 원문에 옷·머리·신발 등 확인된 특징을 포함해 주세요.")
-            else:
-                st.session_state["last_analysis"] = features
-                best = None
-                correction = ""
-                attempts_allowed = FAST_ATTEMPTS if mode == "빠른 생성" else MAX_ATTEMPTS
-                width = FAST_WIDTH if mode == "빠른 생성" else DETAILED_WIDTH
-                height = FAST_HEIGHT if mode == "빠른 생성" else DETAILED_HEIGHT
-                first_image_seconds = None
-                attempts_completed = 0
-                interrupted = False
-                status = st.empty()
-                interim = st.empty()
-                for attempt in range(1, attempts_allowed + 1):
-                    status.info(f"{attempt}차 이미지 생성 중...")
-                    prompt = build_generation_prompt(features, "", correction)
-                    try:
-                        image_bytes, image_b64, mime_type = generate_image(prompt, width, height)
-                    except Exception:
-                        if best is None:
-                            raise
-                        interrupted = True
-                        break
-                    attempts_completed += 1
-                    if first_image_seconds is None:
-                        first_image_seconds = time.perf_counter() - started_at
-                    if mode == "빠른 생성":
-                        verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
-                                   "feedback_en": "", "available": False, "skipped": True}
-                    else:
-                        interim.image(image_bytes, caption="생성 완료 · 자동 검수 중", use_container_width=True)
-                        status.info(f"{attempt}차 이미지 검수 중...")
-                        try:
-                            verdict = verify_image(image_b64, mime_type, features)
-                        except Exception:
-                            verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
-                                       "feedback_en": "", "available": False, "skipped": False}
-                    candidate = {"attempt": attempt, "image": image_bytes, "verification": verdict}
-                    if best is None or (verdict["pass"], verdict["available"], verdict["score"]) > (
-                        best["verification"]["pass"], best["verification"]["available"], best["verification"]["score"]
-                    ):
-                        best = candidate
-                    if verdict.get("skipped") or verdict["pass"] or not verdict["available"]:
-                        break
-                    correction = verdict["feedback_en"]
-                status.empty()
-                interim.empty()
-                total_seconds = time.perf_counter() - started_at
-                event_id = str(uuid.uuid4())
-                result = dict(best=best, features=features, message=message,
-                              mode=mode, width=width, height=height, attempts=attempts_completed,
-                              first_image_seconds=first_image_seconds, total_seconds=total_seconds,
-                              interrupted=interrupted, event_id=event_id)
-                st.session_state["last_result"] = result
-                st.session_state.pop("generation_error", None)
-                usage_metric.metric("내가 이미지 생성에 사용한 횟수", f"{record_my_use()}회")
-                verdict = best["verification"]
-                result["analytics_saved"] = log_analytics_event(
-                    get_anonymous_user_id(), "image_generated",
-                    verification_pass=verdict["pass"] if verdict["available"] else None,
-                    verification_score=verdict["score"] if verdict["available"] else None,
-                    attempts=attempts_completed, event_id=event_id, mode=mode,
-                    first_image_seconds=first_image_seconds, total_seconds=total_seconds)
+            st.session_state["last_analysis"] = features
+            st.session_state["analysis_message"] = message.strip()
+            st.session_state.pop("last_result", None)
+            for key in EDITABLE_FIELDS:
+                st.session_state[f"edit_{key}"] = str(features.get(key, "") or "")
+            st.session_state.pop("generation_error", None)
+        except Exception:
+            st.session_state["generation_error"] = "분석을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요."
+
+features = st.session_state.get("last_analysis")
+edited_features = None
+mode = "빠른 생성"
+generate_clicked = False
+if features:
+    st.subheader("1. 분석 결과 확인 및 수정")
+    for warning in find_contradictions(st.session_state.get("analysis_message", "")):
+        st.warning("원문 확인 필요: " + warning)
+    st.caption("잘못 분석된 항목은 이미지 생성 전에 직접 고칠 수 있습니다. 빈칸은 정보 없음으로 처리됩니다.")
+    c1, c2 = st.columns(2)
+    for index, key in enumerate(EDITABLE_FIELDS):
+        target = c1 if index % 2 == 0 else c2
+        target.text_input(LABELS[key], key=f"edit_{key}", placeholder="정보 없음")
+    edited_features = dict(features)
+    for key in EDITABLE_FIELDS:
+        edited_features[key] = str(st.session_state.get(f"edit_{key}", "") or "").strip()
+    edited_features = sync_prompt_text_from_structured_features(edited_features)
+
+    with st.expander("원문 근거 확인", expanded=False):
+        evidence_found = False
+        original = st.session_state.get("analysis_message", "")
+        for key in EDITABLE_FIELDS:
+            value = edited_features.get(key, "")
+            evidence = evidence_for_field(original, key, value)
+            if evidence:
+                evidence_found = True
+                st.write(f"**{LABELS[key]}:** {evidence}")
+        if not evidence_found:
+            st.write("표시할 원문 근거가 없습니다.")
+    with st.expander("이미지 생성 AI에 전달하는 설명 확인"):
+        st.code(build_generation_prompt(edited_features, ""), language=None)
+        st.caption("이름·목격 위치·발송 지역은 이미지 생성 조건에서 제외합니다.")
+
+    mode = st.radio(
+        "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
+        help="빠른 생성은 작은 이미지 1회를 바로 표시하고, 정밀 생성은 검수하면서 큰 이미지로 최대 3회 생성합니다.",
+    )
+    source_changed = message.strip() != st.session_state.get("analysis_message", "")
+    if source_changed:
+        st.warning("원문이 바뀌었습니다. 1단계 분석을 다시 실행해 주세요.")
+    generate_clicked = st.button(
+        "2단계: 확인한 정보로 참고 이미지 생성", type="primary",
+        use_container_width=True, disabled=source_changed,
+    )
+
+run_requested = generate_clicked or st.session_state.pop("regenerate_requested", False)
+if run_requested and edited_features:
+    limit_message = generation_limit_message()
+    if limit_message:
+        st.warning(limit_message)
+    elif get_known_appearance_count(edited_features) < 3:
+        st.warning("인상착의 정보가 부족합니다. 옷·머리·신발 등 확인된 특징을 3개 이상 입력해 주세요.")
+    else:
+        try:
+            record_generation_attempt()
+            result = generate_reference_result(edited_features, message.strip(), mode)
+            st.session_state["last_result"] = result
+            st.session_state["last_analysis"] = edited_features
+            st.session_state.pop("generation_error", None)
+            usage_metric.metric("내가 이미지 생성에 사용한 횟수", f"{record_my_use()}회")
+            verdict = result["best"]["verification"]
+            result["analytics_saved"] = log_analytics_event(
+                get_anonymous_user_id(), "image_generated",
+                verification_pass=verdict["pass"] if verdict["available"] else None,
+                verification_score=verdict["score"] if verdict["available"] else None,
+                attempts=result["attempts"], event_id=result["event_id"], mode=mode,
+                first_image_seconds=result["first_image_seconds"], total_seconds=result["total_seconds"])
         except Exception as exc:
-            # Never show request URLs, headers, provider payloads or credentials.
             error = str(exc)
-            if "안전 검사" in error:
-                st.session_state["generation_error"] = error
-            else:
-                st.session_state["generation_error"] = "생성을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요."
+            st.session_state["generation_error"] = (error if "안전 검사" in error else
+                "생성을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.")
 
 if st.session_state.get("generation_error"):
     st.error(st.session_state["generation_error"])
 
 result = st.session_state.get("last_result")
-features = result["features"] if result else st.session_state.get("last_analysis")
-if features:
-    st.subheader("1. 분석된 인상착의")
-    c1, c2 = st.columns(2)
-    display_keys = ["gender", "age", "height", "weight", "body_type", "skin_tone",
-                    "hair_color", "hair_length", "hair_texture", "hair_style", "top",
-                    "outerwear", "bottom", "shoes", "hat_type", "hat_color", "glasses",
-                    "facial_hair", "accessories", "special_features"]
-    for i, key in enumerate(display_keys):
-        target = c1 if i < 10 else c2
-        target.write(f"**{LABELS[key]}:** {category_text(features, key)}")
-    st.write(f"**마지막 목격 위치:** {category_text(features, 'last_seen_location')}")
-    st.write(f"**재난문자 발송 지역:** {category_text(features, 'alert_area')}")
-    if features.get("ambiguity_notes"):
-        st.info(features["ambiguity_notes"])
-    with st.expander("이미지 생성 AI에 전달하는 설명 확인"):
-        st.code(build_generation_prompt(features, ""), language=None)
-        st.caption("이름·목격 위치·발송 지역은 이미지 생성 조건에서 제외합니다.")
-
 if result:
     st.subheader("2. 전신 참고 이미지와 검수 결과")
-    if (message, mode) != (result["message"], result["mode"]):
+    if message.strip() != result["message"]:
         st.info("아래는 이전 입력의 결과입니다. 변경한 입력을 반영하려면 다시 생성해 주세요.")
     best = result["best"]
     verdict = best["verification"]
@@ -1053,6 +1111,19 @@ if result:
         st.caption("이번 결과의 전체 통계 저장에 실패했습니다. 브라우저 완료 횟수에는 반영했습니다.")
     with st.expander("이 결과의 재난문자 원문"):
         st.write(result["message"])
+    download_left, download_right = st.columns(2)
+    mime_type = best.get("mime_type") or image_mime(best["image"])
+    extension = "png" if mime_type == "image/png" else "jpg"
+    download_left.download_button(
+        "이미지 다운로드", data=best["image"], file_name=f"cluesight-result.{extension}",
+        mime=mime_type, use_container_width=True,
+    )
+    analysis_export = {LABELS.get(key, key): str(result["features"].get(key, "") or "정보 없음")
+                       for key in EDITABLE_FIELDS}
+    download_right.download_button(
+        "분석 결과 다운로드", data=json.dumps(analysis_export, ensure_ascii=False, indent=2).encode("utf-8"),
+        file_name="cluesight-analysis.json", mime="application/json", use_container_width=True,
+    )
 
 if result or st.session_state.get("generation_error"):
     if st.button("다시 생성하기", type="primary", use_container_width=True):

@@ -347,6 +347,57 @@ def category_text(features: dict[str, Any], key: str) -> str:
     return value
 
 
+EVIDENCE_KEYWORDS = {
+    "gender": ("남성", "여성", "남자", "여자"),
+    "age": ("세", "나이"), "height": ("키", "cm"), "weight": ("몸무게", "kg"),
+    "body_type": ("체형", "비만", "저체중", "통통", "마른", "건장"),
+    "skin_tone": ("피부", "피부톤"), "hair_color": ("머리색", "머리카락"),
+    "hair_length": ("머리길이", "머리 길이", "장발", "단발", "짧"),
+    "hair_texture": ("직모", "곱슬"), "hair_style": HAIRSTYLES,
+    "top": ("상의", "반팔", "긴팔", "티셔츠", "셔츠", "니트", "후드"),
+    "outerwear": ("외투", "겉옷", "점퍼", "자켓", "재킷", "코트", "패딩", "작업복"),
+    "bottom": ("하의", "반바지", "긴바지", "청바지", "슬랙스", "치마"),
+    "shoes": ("신발", "운동화", "크록스", "슬리퍼", "샌들", "구두", "부츠"),
+    "hat_type": ("모자", "비니", "버킷햇", "벙거지"), "hat_color": ("모자",),
+    "glasses": ("안경",), "facial_hair": ("수염", "콧수염", "턱수염"),
+    "accessories": ("가방", "휴대폰", "지갑", "우산", "목걸이", "팔찌", "시계", "소지품"),
+    "special_features": ("특징", "흉터", "문신", "점"),
+    "last_seen_location": ("목격", "위치"), "alert_area": ("발송 지역", "재난문자"),
+}
+
+
+def evidence_for_field(original: str, key: str, value: str) -> str:
+    """Return the closest original clause; never fabricate supporting text."""
+    if not str(value or "").strip():
+        return ""
+    clauses = [part.strip() for part in re.split(r"[,\n。.;]", original) if part.strip()]
+    tokens = [token for token in re.split(r"\s+", str(value)) if len(token) >= 2]
+    for clause in clauses:
+        if any(token in clause for token in tokens):
+            return clause
+    for clause in clauses:
+        if any(word in clause for word in EVIDENCE_KEYWORDS.get(key, ())):
+            return clause
+    return "원문 직접 근거를 찾지 못함"
+
+
+def find_contradictions(text: str) -> list[str]:
+    """Find a small set of explicit contradictions that require human review."""
+    compact = re.sub(r"\s+", "", text)
+    warnings: list[str] = []
+    pairs = (
+        (("직모",), ("곱슬", "곱슬머리"), "머리 형태에 직모와 곱슬이 함께 적혀 있습니다."),
+        (("반바지",), ("긴바지",), "하의에 반바지와 긴바지가 함께 적혀 있습니다."),
+        (("마른편", "저체중"), ("비만", "통통한편", "뚱뚱한편"), "서로 다른 체형 표현이 함께 적혀 있습니다."),
+        (("수염없음", "수염없"), ("콧수염", "턱수염", "수염있음"), "수염 유무가 서로 다르게 적혀 있습니다."),
+        (("안경없음", "안경없"), ("안경착용", "안경씀"), "안경 착용 여부가 서로 다르게 적혀 있습니다."),
+    )
+    for left, right, message in pairs:
+        if any(word in compact for word in left) and any(word in compact for word in right):
+            warnings.append(message)
+    return warnings
+
+
 def known_appearance_count(features: dict[str, Any]) -> int:
     return sum(_has_value(features, key) for key in APPEARANCE_FIELDS)
 

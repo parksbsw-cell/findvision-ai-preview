@@ -6,7 +6,13 @@ import pytest
 import requests
 from streamlit.testing.v1 import AppTest
 
-from preview_logic import category_text, enhance_features_from_text, verification_result
+from preview_logic import (
+    category_text,
+    enhance_features_from_text,
+    evidence_for_field,
+    find_contradictions,
+    verification_result,
+)
 
 APP = Path(__file__).resolve().parents[1] / "app.py"
 PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg=="
@@ -62,9 +68,10 @@ def setup_app(monkeypatch, *, precise=False, vision_error=False, fail_second=Fal
     monkeypatch.setattr(requests, "post", post)
     app = AppTest.from_file(APP, default_timeout=15).run()
     app.text_area[0].set_value("20세 남성, 검은색 나이키 반팔티, 파란색 청바지, 흰색 운동화, 투블럭, 마지막 목격 위치 서울역")
+    next(b for b in app.button if b.label.startswith("1단계:")).click().run()
     if precise:
         app.radio[0].set_value("정밀 생성")
-    app.button[0].click().run()
+    next(b for b in app.button if b.label.startswith("2단계:")).click().run()
     return app, calls
 
 
@@ -76,10 +83,11 @@ def test_retry_survives_reruns_without_duplicate_count(monkeypatch):
     app.run()
     assert len(calls) == 2
     assert app.metric[0].value == "1회"
+    app.session_state["generation_timestamps"] = []
     next(b for b in app.button if b.label == "다시 생성하기").click().run()
     assert not app.exception
     assert app.metric[0].value == "2회"
-    assert len(calls) == 4
+    assert len(calls) == 3  # regeneration reuses the reviewed fields without reanalysis
     prompt = next(k["files"]["prompt"][1] for u, k in calls if "flux" in u)
     assert "서울역" not in prompt and "Seoul Station" not in prompt
     assert "two-block" in prompt and "jeans" in prompt
@@ -150,8 +158,9 @@ def test_flagged_response_stops_without_retry_or_secret_output(monkeypatch):
     monkeypatch.setattr(requests, "post", post)
     app = AppTest.from_file(APP, default_timeout=15).run()
     app.text_area[0].set_value("검은색 반팔티, 청바지, 운동화")
+    next(b for b in app.button if b.label.startswith("1단계:")).click().run()
     app.radio[0].set_value("정밀 생성")
-    app.button[0].click().run()
+    next(b for b in app.button if b.label.startswith("2단계:")).click().run()
     assert len(calls) == 2
     assert app.metric[0].value == "0회"
     assert "안전 검사" in app.error[0].value
@@ -162,3 +171,11 @@ def test_flagged_response_stops_without_retry_or_secret_output(monkeypatch):
 def test_incomplete_vision_json_is_unavailable_not_zero_accuracy():
     assert not verification_result({"answer": "Looks good"})["available"]
     assert not verification_result({"score": "unknown", "pass": False, "missing": [], "wrong": []})["available"]
+
+
+def test_evidence_and_contradiction_detection():
+    text = "남성, 검은색 반팔티, 직모, 곱슬머리, 안경 없음, 안경 착용"
+    assert evidence_for_field(text, "top", "검은색 반팔티") == "검은색 반팔티"
+    warnings = find_contradictions(text)
+    assert any("직모와 곱슬" in warning for warning in warnings)
+    assert any("안경 착용 여부" in warning for warning in warnings)

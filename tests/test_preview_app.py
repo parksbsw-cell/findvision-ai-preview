@@ -75,14 +75,19 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=10).run()
     assert not app.exception
     assert len(app.text_area) == 1
-    app.text_area[0].set_value("원문: 남성, 빨간 반팔티, 검은 긴바지")
-    app.button[0].click().run()
+    app.text_area[0].set_value(
+        "원문: 남성, 마른 편, 빨간 반팔티, 흰색 외투, 검은 긴바지, 검은 크록스, 마지막 목격 위치 서울역"
+    )
+    next(button for button in app.button if button.label.startswith("1단계:")).click().run()
+    next(button for button in app.button if button.label.startswith("2단계:")).click().run()
 
     assert not app.exception
     assert app.metric[0].value == "1회"
+    field_values = {item.label: item.value for item in app.text_input}
+    assert field_values["체형"] == "마른 편"
+    assert field_values["외투·겉옷"] == "흰색 외투"
+    assert field_values["겉옷 브랜드"] == ""
     rendered = "\n".join(markdown.value for markdown in app.markdown)
-    assert "마른 편" in rendered
-    assert "흰색 외투 (브랜드: 정보 없음)" in rendered
     assert "겉옷 여밈" not in rendered
     assert "서울역" in rendered
     visible_messages = "\n".join(
@@ -138,8 +143,9 @@ def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypat
     monkeypatch.setattr(requests, "post", fake_post)
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=10).run()
     app.text_area[0].set_value("가상 예시: 남성, 빨간 반팔티, 검은 긴바지, 검은 크록스")
+    next(button for button in app.button if button.label.startswith("1단계:")).click().run()
     app.radio[0].set_value("정밀 생성")
-    app.button[0].click().run()
+    next(button for button in app.button if button.label.startswith("2단계:")).click().run()
 
     assert not app.exception
     assert "겉옷이 명시된 경우에만" in prompts["extraction"]
