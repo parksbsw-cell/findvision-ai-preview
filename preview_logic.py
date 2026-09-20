@@ -1,4 +1,4 @@
-"""Testable Korean appearance extraction rules for FindVision AI.
+"""Testable Korean appearance extraction rules for ClueSight.
 
 Recover only explicit facts: never infer body size from weight or put a last-seen
 location into the image prompt.
@@ -103,7 +103,7 @@ def _color_in(value: str) -> str:
 
 def _extract_clothing(text: str, clothing_words: str) -> str:
     pattern = (
-        rf"({COLORS})?\s*"
+        rf"({COLORS})?\s*(?:(?:{'|'.join(re.escape(b) for b in BRANDS)})\s*)?"
         rf"((?:(?:로고\s*(?:있는|없는)|무지|긴팔|반팔|긴|짧은)\s*)*)"
         rf"({clothing_words})"
     )
@@ -247,6 +247,26 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     enhanced = dict(features)
     _apply_text_facts(enhanced, original, overwrite=False)
     _apply_text_facts(enhanced, details, overwrite=True)
+    # Explicit category associations override model guesses (e.g. shirt brand on shoes).
+    for garment, brand_key in (("top", "top_brand"), ("outerwear", "outerwear_brand"),
+                               ("bottom", "bottom_brand"), ("shoes", "shoes_brand"),
+                               ("hat_type", "hat_brand")):
+        brand = _explicit_brand(details, garment)
+        if brand is None:
+            brand = _explicit_brand(original, garment)
+        if brand is None and garment == "shoes" and "크록스" in original + details:
+            brand = "크록스"
+        enhanced[brand_key] = brand or ""
+    for key in ("body_type", "hair_style"):
+        explicit = {}
+        _apply_text_facts(explicit, original)
+        _apply_text_facts(explicit, details, overwrite=True)
+        enhanced[key] = explicit.get(key, "")
+    # A last-seen place alone is never evidence of the sender's region.
+    if not re.search(r"발송\s*지역|^\s*\[", original + "\n" + details):
+        enhanced["alert_area"] = ""
+    if enhanced.get("hair_length") in HAIRSTYLES:
+        enhanced["hair_length"] = ""
     styles = {
         "투블럭": "two-block haircut, closely trimmed sides and back with longer hair on top",
         "버섯머리": "mushroom bowl haircut with an even rounded fringe",
@@ -296,6 +316,10 @@ def category_text(features: dict[str, Any], key: str) -> str:
         meta_key, meta_label = metadata
         meta_value = str(features.get(meta_key, "") or "").strip() or "정보 없음"
         if meta_label == "브랜드" and meta_value != "정보 없음":
+            for brand in BRANDS:
+                value = re.sub(re.escape(brand), "", value, flags=re.I)
+            value = re.sub(r"[()]", "", value)
+            value = re.sub(r"\s+", " ", value).strip() or "정보 없음"
             return f"{value} ({meta_value})"
         return f"{value} ({meta_label}: {meta_value})"
     return value
@@ -364,3 +388,4 @@ def image_mime(image_bytes: bytes) -> str:
     if image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
         return "image/webp"
     return "application/octet-stream"
+
