@@ -53,11 +53,11 @@ def setup_app(monkeypatch, *, precise=False, vision_error=False, fail_second=Fal
             return Response({"success": True, "result": {"image": PNG}})
         if vision_error:
             raise requests.Timeout("never-display-this-secret")
-        return Response({"success": True, "result": {"answer": json.dumps({
+        return Response({"success": True, "result": {"result": {"answer": json.dumps({
             "score": 60 if precise else 90, "pass": not precise,
             "missing": ["shirt"] if precise else [], "wrong": [], "has_text": False,
             "feedback_en": "Correct the shirt color."
-        })}})
+        })}, "usage": {"total_tokens": 10}}})
 
     monkeypatch.setattr(requests, "post", post)
     app = AppTest.from_file(APP, default_timeout=15).run()
@@ -72,6 +72,8 @@ def test_retry_survives_reruns_without_duplicate_count(monkeypatch):
     app, calls = setup_app(monkeypatch)
     assert not app.exception
     assert app.metric[0].value == "1회"
+    assert app.session_state["last_result"]["best"]["verification"]["available"] is True
+    assert app.session_state["last_result"]["best"]["verification"]["pass"] is True
     app.run()
     assert len(calls) == 3
     assert app.metric[0].value == "1회"
