@@ -153,3 +153,29 @@ def test_accessory_colors_and_parts_are_preserved():
 def test_explicit_button_is_kept_as_a_visible_feature():
     recovered = enhance_features_from_text({}, "갈색 코트, 흰색 단추", "")
     assert recovered["special_features"] == "흰색 단추"
+
+
+def test_live_test_details_are_not_dropped():
+    text = (
+        "한국인 여성, 검은색 단발 곱슬머리, 흰색 블라우스, "
+        "빨간색 손가방과 은색 손목시계, 오른손에 초록색 우산, "
+        "목에 은색 별 모양 목걸이 착용"
+    )
+    recovered = enhance_features_from_text({}, text, "")
+    assert recovered["hair_length"] == "턱선 길이"
+    assert recovered["top"] == "흰색 블라우스"
+    for expected in (
+        "빨간색 손가방", "은색 손목시계", "오른손에 초록색 우산", "목에 은색 별 모양 목걸이"
+    ):
+        assert expected in recovered["accessories"]
+
+
+def test_detailed_hiking_hat_is_preserved():
+    recovered = enhance_features_from_text({}, "빨간색 챙 넓은 등산모자 착용", "")
+    assert recovered["hat_color"] == "빨간색"
+    assert recovered["hat_type"] == "챙 넓은 등산모자"
+
+
+def test_straight_hair_synonym_is_recognized():
+    recovered = enhance_features_from_text({}, "긴 검은색 생머리", "")
+    assert recovered["hair_texture"] == "직모"
