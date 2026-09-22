@@ -391,6 +391,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("별 모양", "star-shaped"),
         ("오른손에", "in the right hand"),
         ("왼손에", "in the left hand"),
+        ("오른손목에", "on the right wrist"),
+        ("왼손목에", "on the left wrist"),
     ]
     for source, target in replacements:
         text = text.replace(source, target)

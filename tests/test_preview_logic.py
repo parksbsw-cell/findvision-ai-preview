@@ -179,7 +179,10 @@ def test_explicit_bob_length_overrides_model_category_mixup():
 
 
 def test_detailed_hiking_hat_is_preserved():
-    recovered = enhance_features_from_text({}, "빨간색 챙 넓은 등산모자 착용", "")
+    recovered = enhance_features_from_text(
+        {"hat_type": "넓은 등산모자", "hat_color": "빨강"},
+        "빨간색 챙 넓은 등산모자 착용", "",
+    )
     assert recovered["hat_color"] == "빨간색"
     assert recovered["hat_type"] == "챙 넓은 등산모자"
 
@@ -187,3 +190,8 @@ def test_detailed_hiking_hat_is_preserved():
 def test_straight_hair_synonym_is_recognized():
     recovered = enhance_features_from_text({}, "긴 검은색 생머리", "")
     assert recovered["hair_texture"] == "직모"
+
+
+def test_wrist_side_is_preserved_for_watch():
+    recovered = enhance_features_from_text({}, "왼손목에 은색 손목시계 착용", "")
+    assert recovered["accessories"] == "왼손목에 은색 손목시계"

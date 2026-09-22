@@ -157,6 +157,7 @@ def _explicit_accessories(text: str) -> list[str]:
         (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}우산)", ""),
         (rf"({color_or_detail}(?:작은\s*)?(?:손가방|백팩|가방))", ""),
         (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
+        (rf"((?:왼손목|오른손목)(?:에)?\s*{color_or_detail}(?:손목\s*)?시계)", ""),
         (rf"({color_or_detail}(?:손목\s*)?시계)", ""),
         (rf"((?:목에\s*)?{color_or_detail}(?:[가-힣]+\s*모양\s*)?목걸이)", ""),
         (rf"({color_or_detail}(?:[가-힣]+\s*모양\s*)?팔찌)", ""),
@@ -311,6 +312,13 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     _apply_text_facts(enhanced, original, overwrite=False)
     _apply_text_facts(enhanced, details, overwrite=True)
     combined_text = original + "\n" + details
+    explicit: dict[str, Any] = {}
+    _apply_text_facts(explicit, original)
+    _apply_text_facts(explicit, details, overwrite=True)
+    for key in ("body_type", "hair_color", "hair_length", "hair_texture", "hair_style",
+                "hat_type", "hat_color"):
+        if _has_value(explicit, key):
+            enhanced[key] = explicit[key]
     # Model output cannot invent a garment category. This prevents an explicit
     # jacket from being copied into bottoms as matching suit pants.
     for garment in ("top", "outerwear", "bottom", "shoes"):
@@ -327,9 +335,6 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
             brand = "크록스"
         enhanced[brand_key] = brand or ""
     for key in ("body_type", "hair_style"):
-        explicit = {}
-        _apply_text_facts(explicit, original)
-        _apply_text_facts(explicit, details, overwrite=True)
         enhanced[key] = explicit.get(key, "")
     if re.search(r"단발(?:머리)?", combined_text):
         enhanced["hair_length"] = "턱선 길이"

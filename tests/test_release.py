@@ -219,8 +219,8 @@ def test_detailed_korean_accessory_terms_are_translated(monkeypatch):
     prompt = build_generation_prompt({
         "gender": "여성", "top": "흰색 블라우스", "hat_type": "챙 넓은 등산모자",
         "hat_color": "빨간색",
-        "accessories": "오른손에 초록색 우산 은색 손목시계 금색 별 모양 목걸이",
+        "accessories": "오른손에 초록색 우산 왼손목에 은색 손목시계 금색 별 모양 목걸이",
     }, "")
     for expected in ("white blouse", "wide-brim hiking hat", "in the right hand green umbrella",
-                     "silver wristwatch", "gold star-shaped necklace"):
+                     "on the left wrist silver wristwatch", "gold star-shaped necklace"):
         assert expected in prompt
