@@ -40,14 +40,15 @@ cookie_controller = CookieController()
 
 TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
 IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
+DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
 VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
 MAX_ATTEMPTS = 3
 FAST_ATTEMPTS = 1
 FAST_WIDTH = 512
 FAST_HEIGHT = 768
-DETAILED_WIDTH = 768
-DETAILED_HEIGHT = 1024
+DETAILED_WIDTH = 896
+DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
@@ -320,7 +321,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("베이지색", "beige"), ("갈색", "brown"), ("분홍색", "pink"),
         ("보라색", "purple"), ("주황색", "orange"),
         ("후드집업", "zip-up hoodie"), ("후드티", "hoodie"), ("맨투맨", "sweatshirt"),
-        ("티셔츠", "T-shirt"), ("셔츠", "shirt"), ("니트", "knit sweater"),
+        ("티셔츠", "T-shirt"), ("블라우스", "blouse"), ("셔츠", "shirt"),
+        ("니트", "knit sweater"),
         ("바람막이", "windbreaker"), ("패딩", "puffer jacket"),
         ("점퍼", "jacket"), ("자켓", "jacket"), ("재킷", "jacket"),
         ("코트", "coat"), ("외투", "coat"), ("겉옷", "outerwear"),
@@ -336,6 +338,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("붉은색", "red"),
         ("파란색", "blue"),
         ("남색", "navy"),
+        ("은색", "silver"),
+        ("금색", "gold"),
         ("밝은 편", "light skin tone"),
         ("어두운 편", "dark skin tone"),
         ("통통한 편", "stocky build"),
@@ -363,6 +367,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("운동화", "sneakers"),
         ("모자(종류 불명)", "hat of unspecified type"),
         ("캡모자", "baseball cap"),
+        ("챙 넓은 등산모자", "wide-brim hiking hat"),
+        ("등산모자", "hiking hat"),
         ("모자", "hat"),
         ("버섯머리", "mushroom bowl haircut with an even rounded fringe covering the forehead, no center part"),
         ("직모", "straight hair"),
@@ -370,13 +376,21 @@ def phrase_to_prompt_en(value: str) -> str:
         ("안경", "glasses"),
         ("없음", "none"),
         ("작은가방", "small bag"),
+        ("손가방", "handbag"),
         ("가방", "bag"),
         ("휴대폰", "phone"),
         ("지갑", "wallet"),
         ("우산", "umbrella"),
         ("목걸이", "necklace"),
         ("팔찌", "bracelet"),
+        ("손목시계", "wristwatch"),
         ("시계", "watch"),
+        ("뚜껑", "lid"),
+        ("빨대", "straw"),
+        ("버클", "buckle"),
+        ("별 모양", "star-shaped"),
+        ("오른손에", "in the right hand"),
+        ("왼손에", "in the left hand"),
     ]
     for source, target in replacements:
         text = text.replace(source, target)
@@ -462,16 +476,21 @@ def build_generation_prompt(
         if features.get("hair_style") else ""
     )
     possessions = (
-        "Show every stated possession and accessory with its stated color and parts clearly visible. "
+        "Show every stated possession and accessory exactly once, with its stated color, shape, "
+        "parts and hand/body placement clearly visible. Do not merge, duplicate or substitute them. "
         if features.get("accessories") else ""
     )
     prompt = (
         "Create one photorealistic full-body appearance reference of a fictional person. "
         "This is an illustration of described clothing and build, not an identified person's face. "
-        "Standing front view, head and feet visible, plain light background, contemporary clothing. "
+        "Exactly one person, standing naturally in a straight front view. Keep the entire head, both "
+        "hands, every carried item, legs and both shoes fully inside the frame with comfortable margins. "
+        "Use realistic anatomy, natural proportions, sharp fabric texture, neutral documentary lighting, "
+        "high detail, plain light studio background and contemporary clothing. "
         + origin_instruction +
         "Match only the stated appearance facts; unspecified details are illustrative. "
-        "No text, logos or watermark. " + layers + " " + haircut + possessions + "\n" + description
+        "No extra person, extra limb, duplicate item, text, letters, logos, watermark or decorative props. "
+        + layers + " " + haircut + possessions + "\n" + description
     )
     if correction:
         prompt += "\nCorrect these visible mismatches only: " + correction[:800]
@@ -481,13 +500,13 @@ def build_generation_prompt(
 def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, str]:
     # FLUX.2 Klein은 REST API에서 multipart/form-data 사용
     result = cloudflare_multipart_request(
-        IMAGE_MODEL,
+        DETAILED_IMAGE_MODEL if width >= DETAILED_WIDTH else IMAGE_MODEL,
         {
             "prompt": prompt,
             "width": width,
             "height": height,
             # 값이 높을수록 프롬프트를 더 강하게 따르도록 유도
-            "guidance": 4.0,
+            "guidance": 4.5 if width >= DETAILED_WIDTH else 4.0,
         },
     )
 
@@ -601,8 +620,11 @@ Reject the image if:
 {outerwear_rejection}
 - required shoes are wrong
 - required hat type/color is wrong
+- any stated possession/accessory is missing, duplicated, wrong in color/shape, or placed on the wrong hand/body area
 - specified hair or skin characteristics are wrong
 - the full body is not visible
+- hands, feet or required carried items are cropped, hidden or anatomically malformed
+- more than one person, extra limbs or duplicated clothing/items appear
 - traditional, historical, ceremonial or fantasy clothing appears without being required
 - any text, calligraphy, letters, numbers, logo, sign, poster or watermark appears
 - the image is anime/cartoon/illustration instead of a realistic reference photograph

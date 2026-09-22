@@ -102,7 +102,9 @@ def test_precise_attempt_limits_and_partial_result(monkeypatch, vision_error, fa
     assert app.session_state["last_result"]["best"]["image"] == base64.b64decode(PNG)
     assert "never-display-this-secret" not in str(app.error)
     image_call = next(k for u, k in calls if "flux" in u)
-    assert image_call["files"]["width"][1] == "768"
+    assert image_call["files"]["width"][1] == "896"
+    assert image_call["files"]["height"][1] == "1152"
+    assert "flux-2-klein-9b" in next(u for u, _ in calls if "flux" in u)
 
 
 def test_analytics_is_private_and_emitted_once_per_result(monkeypatch):
@@ -204,3 +206,21 @@ def test_generation_prompt_strengthens_haircut_and_possessions(monkeypatch):
     }, "")
     assert "no center part" in prompt
     assert "every stated possession" in prompt
+    assert "exactly once" in prompt
+    assert "both hands" in prompt and "both shoes" in prompt
+    assert "duplicate item" in prompt
+
+
+def test_detailed_korean_accessory_terms_are_translated(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    from app import build_generation_prompt
+
+    prompt = build_generation_prompt({
+        "gender": "여성", "top": "흰색 블라우스", "hat_type": "챙 넓은 등산모자",
+        "hat_color": "빨간색",
+        "accessories": "오른손에 초록색 우산 은색 손목시계 금색 별 모양 목걸이",
+    }, "")
+    for expected in ("white blouse", "wide-brim hiking hat", "in the right hand green umbrella",
+                     "silver wristwatch", "gold star-shaped necklace"):
+        assert expected in prompt
