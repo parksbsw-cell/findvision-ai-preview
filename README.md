@@ -1,4 +1,6 @@
-# ClueSight
+# FindVision AI
+
+제작 팀: ClueSight
 
 실종 재난문자의 인상착의를 분석하여 전신 참고 이미지를 만드는 Streamlit 앱입니다.
 생성 이미지는 실제 얼굴 복원이나 신원 확인 자료가 아닙니다.

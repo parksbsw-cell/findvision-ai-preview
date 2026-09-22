@@ -31,7 +31,7 @@ from preview_logic import (
 # =========================================================
 
 st.set_page_config(
-    page_title="ClueSight",
+    page_title="FindVision AI",
     page_icon="🔎",
     layout="wide",
 )
@@ -794,7 +794,7 @@ def calculate_analytics(rows: list) -> dict:
 
 
 def show_admin_analytics() -> None:
-    st.subheader("📊 ClueSight 서비스 사용 지표")
+    st.subheader("📊 FindVision AI 서비스 사용 지표")
 
     if not analytics_enabled():
         st.info("전체 통계가 연결되지 않았습니다. 설정 전 사용량을 전체 사용자 수로 표시하지 않습니다.")
@@ -946,7 +946,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # UI
 # =========================================================
 
-st.title("🔎 ClueSight")
+st.title("🔎 FindVision AI")
 st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.09.20")
 missing_cloudflare_settings = [
     name
@@ -1136,14 +1136,14 @@ if result:
     mime_type = best.get("mime_type") or image_mime(best["image"])
     extension = "png" if mime_type == "image/png" else "jpg"
     download_left.download_button(
-        "이미지 다운로드", data=best["image"], file_name=f"cluesight-result.{extension}",
+        "이미지 다운로드", data=best["image"], file_name=f"findvision-ai-result.{extension}",
         mime=mime_type, use_container_width=True,
     )
     analysis_export = {LABELS.get(key, key): str(result["features"].get(key, "") or "정보 없음")
                        for key in EDITABLE_FIELDS}
     download_right.download_button(
         "분석 결과 다운로드", data=json.dumps(analysis_export, ensure_ascii=False, indent=2).encode("utf-8"),
-        file_name="cluesight-analysis.json", mime="application/json", use_container_width=True,
+        file_name="findvision-ai-analysis.json", mime="application/json", use_container_width=True,
     )
 
 if result or st.session_state.get("generation_error"):
