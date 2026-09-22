@@ -173,7 +173,10 @@ def _explicit_accessories(text: str) -> list[str]:
             value = "시계"
         if value and value not in found:
             found.append(value)
-    return found
+    return [
+        phrase for phrase in found
+        if not any(phrase != other and phrase in other for other in found)
+    ]
 
 
 def _explicit_special_features(text: str) -> list[str]:
@@ -328,6 +331,10 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
         _apply_text_facts(explicit, original)
         _apply_text_facts(explicit, details, overwrite=True)
         enhanced[key] = explicit.get(key, "")
+    if re.search(r"단발(?:머리)?", combined_text):
+        enhanced["hair_length"] = "턱선 길이"
+    if "생머리" in combined_text:
+        enhanced["hair_texture"] = "직모"
     # Do not trust free-form model output for this category. Clothing and hats
     # are commonly copied into accessories even when the user stated none.
     enhanced["accessories"] = _merge_phrases(

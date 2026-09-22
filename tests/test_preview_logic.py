@@ -168,6 +168,14 @@ def test_live_test_details_are_not_dropped():
         "빨간색 손가방", "은색 손목시계", "오른손에 초록색 우산", "목에 은색 별 모양 목걸이"
     ):
         assert expected in recovered["accessories"]
+    assert recovered["accessories"].count("초록색 우산") == 1
+
+
+def test_explicit_bob_length_overrides_model_category_mixup():
+    recovered = enhance_features_from_text(
+        {"hair_length": "단발", "hair_style": "단발"}, "검은색 단발 곱슬머리", ""
+    )
+    assert recovered["hair_length"] == "턱선 길이"
 
 
 def test_detailed_hiking_hat_is_preserved():
