@@ -224,3 +224,18 @@ def test_detailed_korean_accessory_terms_are_translated(monkeypatch):
     for expected in ("white blouse", "wide-brim hiking hat", "in the right hand green umbrella",
                      "on the left wrist silver wristwatch", "gold star-shaped necklace"):
         assert expected in prompt
+
+
+def test_layered_unbuttoned_school_shirt_prompt(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    from app import build_generation_prompt
+
+    prompt = build_generation_prompt({
+        "top": "검은색 얇은 반팔 티", "outerwear": "흰색 학교 반팔 셔츠",
+        "special_features": "모든 단추를 푼 상태",
+    }, "")
+    assert "black thin lightweight short-sleeve" in prompt
+    assert "white school uniform short-sleeve shirt" in prompt
+    assert "fully unbuttoned" in prompt
+    assert "outer shirt fully open" in prompt

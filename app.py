@@ -323,6 +323,9 @@ def phrase_to_prompt_en(value: str) -> str:
         ("후드집업", "zip-up hoodie"), ("후드티", "hoodie"), ("맨투맨", "sweatshirt"),
         ("티셔츠", "T-shirt"), ("블라우스", "blouse"), ("셔츠", "shirt"),
         ("니트", "knit sweater"),
+        ("학교", "school uniform"),
+        ("얇은", "thin lightweight"),
+        ("두꺼운", "thick"),
         ("바람막이", "windbreaker"), ("패딩", "puffer jacket"),
         ("점퍼", "jacket"), ("자켓", "jacket"), ("재킷", "jacket"),
         ("코트", "coat"), ("외투", "coat"), ("겉옷", "outerwear"),
@@ -393,6 +396,9 @@ def phrase_to_prompt_en(value: str) -> str:
         ("왼손에", "in the left hand"),
         ("오른손목에", "on the right wrist"),
         ("왼손목에", "on the left wrist"),
+        ("모든 단추를 푼 상태", "worn fully unbuttoned with every button open"),
+        ("단추를 푼 상태", "worn unbuttoned"),
+        ("모든 단추를 잠근 상태", "worn fully buttoned"),
     ]
     for source, target in replacements:
         text = text.replace(source, target)
@@ -482,6 +488,12 @@ def build_generation_prompt(
         "parts and hand/body placement clearly visible. Do not merge, duplicate or substitute them. "
         if features.get("accessories") else ""
     )
+    button_state = (
+        "The stated button/closure state is mandatory. Keep the outer shirt fully open so the inner "
+        "top remains clearly visible. "
+        if "단추" in str(features.get("special_features", ""))
+        and "푼" in str(features.get("special_features", "")) else ""
+    )
     prompt = (
         "Create one photorealistic full-body appearance reference of a fictional person. "
         "This is an illustration of described clothing and build, not an identified person's face. "
@@ -492,7 +504,7 @@ def build_generation_prompt(
         + origin_instruction +
         "Match only the stated appearance facts; unspecified details are illustrative. "
         "No extra person, extra limb, duplicate item, text, letters, logos, watermark or decorative props. "
-        + layers + " " + haircut + possessions + "\n" + description
+        + layers + " " + button_state + haircut + possessions + "\n" + description
     )
     if correction:
         prompt += "\nCorrect these visible mismatches only: " + correction[:800]

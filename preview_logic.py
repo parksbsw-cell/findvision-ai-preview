@@ -105,7 +105,7 @@ def _color_in(value: str) -> str:
 def _extract_clothing(text: str, clothing_words: str) -> str:
     pattern = (
         rf"({COLORS})?\s*(?:(?:{'|'.join(re.escape(b) for b in BRANDS)})\s*)?"
-        rf"((?:(?:로고\s*(?:있는|없는)|무지|긴팔|반팔|긴|짧은)\s*)*)"
+        rf"((?:(?:로고\s*(?:있는|없는)|무지|학교|얇은|두꺼운|긴팔|반팔|긴|짧은)\s*)*)"
         rf"({clothing_words})"
     )
     matches = list(re.finditer(pattern, text))
@@ -113,6 +113,19 @@ def _extract_clothing(text: str, clothing_words: str) -> str:
         return ""
     match = max(matches, key=lambda item: len("".join(part or "" for part in item.groups())))
     return _merge_words(_normalize_color(match.group(1) or ""), match.group(2), match.group(3))
+
+
+def _explicit_top_layers(text: str) -> tuple[str, str]:
+    """Extract an inner top and an explicitly layered overshirt."""
+    match = re.search(r"(?:안에|속에)\s*(.+?)\s*(?:를|을)?\s*(?:입고|입은|착용하고).*?"
+                      r"(?:그\s*위에|위에는?)\s*(.+)", text)
+    if not match:
+        return "", ""
+    inner_text, outer_text = match.groups()
+    outer_text = re.sub(rf"학교\s*({COLORS})", r"\1 학교", outer_text)
+    inner = _extract_clothing(inner_text, CLOTHES["top"])
+    outer = _extract_clothing(outer_text, CLOTHES["top"])
+    return inner, outer
 
 
 def _explicit_brand(text: str, key: str) -> str | None:
@@ -182,8 +195,16 @@ def _explicit_accessories(text: str) -> list[str]:
 
 def _explicit_special_features(text: str) -> list[str]:
     found: list[str] = []
+    if re.search(r"(?:모든|전체|전부)\s*단추(?:를)?\s*(?:풀어|푼|열어|연)", text):
+        found.append("모든 단추를 푼 상태")
+    elif re.search(r"단추(?:를)?\s*(?:풀어|푼|열어|연)", text):
+        found.append("단추를 푼 상태")
+    elif re.search(r"(?:모든|전체|전부)\s*단추(?:를)?\s*(?:잠가|잠근|채워|채운)", text):
+        found.append("모든 단추를 잠근 상태")
     for match in re.finditer(rf"((?:{COLORS})?\s*(?:큰|작은)?\s*(?:단추|로고|문신|흉터))", text):
         value = re.sub(r"\s+", " ", match.group(1)).strip()
+        if value == "단추" and any("단추" in item and "상태" in item for item in found):
+            continue
         if value and value not in found:
             found.append(value)
     return found
@@ -319,9 +340,15 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
                 "hat_type", "hat_color"):
         if _has_value(explicit, key):
             enhanced[key] = explicit[key]
+    inner_top, outer_top = _explicit_top_layers(combined_text)
+    if inner_top and outer_top:
+        enhanced["top"] = inner_top
+        enhanced["outerwear"] = outer_top
     # Model output cannot invent a garment category. This prevents an explicit
     # jacket from being copied into bottoms as matching suit pants.
     for garment in ("top", "outerwear", "bottom", "shoes"):
+        if garment == "outerwear" and inner_top and outer_top:
+            continue
         if not re.search(CLOTHES[garment], combined_text):
             enhanced[garment] = ""
     # Explicit category associations override model guesses (e.g. shirt brand on shoes).

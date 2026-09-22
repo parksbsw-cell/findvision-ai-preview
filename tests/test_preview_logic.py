@@ -195,3 +195,14 @@ def test_straight_hair_synonym_is_recognized():
 def test_wrist_side_is_preserved_for_watch():
     recovered = enhance_features_from_text({}, "왼손목에 은색 손목시계 착용", "")
     assert recovered["accessories"] == "왼손목에 은색 손목시계"
+
+
+def test_layered_shirts_and_open_buttons_are_preserved():
+    text = (
+        "안에 검은색 얇은 반팔티를 입고 그 위에 학교 흰색 반팔 셔츠를 "
+        "입었으며 모든 단추를 풀어 입음"
+    )
+    recovered = enhance_features_from_text({}, text, "")
+    assert recovered["top"] == "검은색 얇은 반팔티"
+    assert recovered["outerwear"] == "흰색 학교 반팔 셔츠"
+    assert recovered["special_features"] == "모든 단추를 푼 상태"
