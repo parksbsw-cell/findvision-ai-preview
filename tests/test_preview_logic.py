@@ -126,3 +126,30 @@ def test_model_cannot_copy_hair_into_facial_hair():
     model = {"facial_hair": "짧은 검은색 곱슬머리"}
     assert enhance_features_from_text(model, "짧은 검은색 곱슬머리", "")["facial_hair"] == ""
     assert enhance_features_from_text(model, "짧은 머리, 수염 없음", "")["facial_hair"] == "없음"
+
+
+def test_model_cannot_invent_bottom_from_suit_jacket():
+    original = "한국인 남성, 검은색 반팔 티셔츠, 검은색 정장 재킷 착용"
+    model = {
+        "top": "검은색 반팔 티셔츠",
+        "outerwear": "검은색 정장 재킷",
+        "bottom": "검은색 정장 바지",
+    }
+    recovered = enhance_features_from_text(model, original, "")
+    assert recovered["top"] == "검은색 반팔 티셔츠"
+    assert recovered["outerwear"] == "검은색 정장 재킷"
+    assert recovered["bottom"] == ""
+
+
+def test_accessory_colors_and_parts_are_preserved():
+    original = "흰색 텀블러와 분홍색 뚜껑 및 빨대, 여러 색상의 가방 끈, 검은색 버클 장식"
+    recovered = enhance_features_from_text({}, original, "")
+    accessories = recovered["accessories"]
+    for expected in ("흰색 텀블러", "분홍색 뚜껑", "빨대", "여러 색상의 가방 끈", "검은색 버클 장식"):
+        assert expected in accessories
+    assert recovered["top"] == ""
+
+
+def test_explicit_button_is_kept_as_a_visible_feature():
+    recovered = enhance_features_from_text({}, "갈색 코트, 흰색 단추", "")
+    assert recovered["special_features"] == "흰색 단추"

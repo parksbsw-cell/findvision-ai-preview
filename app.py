@@ -245,7 +245,8 @@ def extract_features(original: str) -> dict:
 6. 티셔츠·셔츠·니트는 top, 자켓·점퍼·코트·바람막이·후드집업·패딩·외투는 outerwear로 분리한다.
 7. 체형은 비만, 통통한 편, 마른 편, 저체중 등 명시된 경우 body_type에 적는다.
 8. 겉옷이 있더라도 top을 삭제하지 않는다. 단, 겉옷 안의 상의가 명시되지 않았으면 top은 비운다.
-9. 소지품과 액세서리는 accessories에 가능한 한 빠짐없이 적는다.
+9. 소지품과 액세서리는 색상·부품·형태를 생략하지 말고 accessories에 적는다.
+   예: "흰색 텀블러, 분홍색 뚜껑, 빨대, 여러 색상의 가방 끈".
 
 image_prompt_en 규칙:
 - 반드시 자연스럽고 정확한 영어로 작성한다.
@@ -363,7 +364,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("모자(종류 불명)", "hat of unspecified type"),
         ("캡모자", "baseball cap"),
         ("모자", "hat"),
-        ("버섯머리", "mushroom haircut"),
+        ("버섯머리", "mushroom bowl haircut with an even rounded fringe covering the forehead, no center part"),
         ("직모", "straight hair"),
         ("곱슬", "curly hair"),
         ("안경", "glasses"),
@@ -456,13 +457,21 @@ def build_generation_prompt(
     )
     layers = ("Wear the stated outerwear over the inner top. A closed outer layer may hide the top."
               if features.get("outerwear") else "No outerwear is specified; do not add a coat or jacket.")
+    haircut = (
+        "The stated haircut is mandatory and must not be replaced with a center-parted hairstyle. "
+        if features.get("hair_style") else ""
+    )
+    possessions = (
+        "Show every stated possession and accessory with its stated color and parts clearly visible. "
+        if features.get("accessories") else ""
+    )
     prompt = (
         "Create one photorealistic full-body appearance reference of a fictional person. "
         "This is an illustration of described clothing and build, not an identified person's face. "
         "Standing front view, head and feet visible, plain light background, contemporary clothing. "
         + origin_instruction +
         "Match only the stated appearance facts; unspecified details are illustrative. "
-        "No text, logos or watermark. " + layers + "\n" + description
+        "No text, logos or watermark. " + layers + " " + haircut + possessions + "\n" + description
     )
     if correction:
         prompt += "\nCorrect these visible mismatches only: " + correction[:800]

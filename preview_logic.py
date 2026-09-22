@@ -44,7 +44,7 @@ HAIRSTYLES = (
     "묶은머리", "땋은머리", "곱슬머리", "파마머리", "파마",
 )
 CLOTHES = {
-    "top": r"반팔\s*티(?:셔츠)?|긴팔\s*티(?:셔츠)?|티셔츠|맨투맨|후드티|폴로티|카라티|셔츠|니트|상의",
+    "top": r"반팔\s*티(?:셔츠)?|긴팔\s*티(?:셔츠)?|티셔츠|맨투맨|후드티|폴로티|카라티|셔츠|니트|(?<!색)상의",
     "outerwear": r"후드\s*집업|바람막이|패딩|점퍼|자켓|재킷|코트|외투|겉옷|조끼|작업복",
     "bottom": r"반바지|긴바지|청바지|슬랙스|치마|레깅스|바지|하의",
     "shoes": r"운동화|크록스|슬리퍼|샌들|구두|단화|부츠|신발",
@@ -137,19 +137,34 @@ def _explicit_accessories(text: str) -> list[str]:
     if re.search(r"(?:소지품|액세서리)\s*[:：]?\s*(?:없음|없다|없)", text):
         return []
     found: list[str] = []
+    color_or_detail = rf"(?:(?:{COLORS})|여러\s*색상의|다색|투명한?)?\s*"
     for pattern, label in (
+        (rf"({color_or_detail}가방\s*끈)", ""),
+        (rf"({color_or_detail}텀블러)", ""),
+        (rf"({color_or_detail}뚜껑)", ""),
+        (rf"({color_or_detail}빨대)", ""),
+        (rf"({color_or_detail}버클(?:\s*장식)?)", ""),
         (r"작은\s*가방", "작은가방"), (r"백팩", "백팩"),
         (r"가방", "가방"), (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
         (r"지갑", "지갑"), (r"우산", "우산"),
         (r"목걸이", "목걸이"), (r"팔찌", "팔찌"), (r"시계", "시계"),
         (r"소지품\s*[:：]?\s*([가-힣A-Za-z0-9]+)", ""),
     ):
-        if label == "가방" and re.search(r"작은\s*가방", text):
+        if label == "가방" and re.search(r"작은\s*가방|가방\s*끈", text):
             continue
         match = re.search(pattern, text)
         if not match:
             continue
         value = match.group(1) if not label and match.groups() else label
+        if value and value not in found:
+            found.append(value)
+    return found
+
+
+def _explicit_special_features(text: str) -> list[str]:
+    found: list[str] = []
+    for match in re.finditer(rf"((?:{COLORS})?\s*(?:큰|작은)?\s*(?:단추|로고|문신|흉터))", text):
+        value = re.sub(r"\s+", " ", match.group(1)).strip()
         if value and value not in found:
             found.append(value)
     return found
@@ -263,6 +278,12 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     enhanced = dict(features)
     _apply_text_facts(enhanced, original, overwrite=False)
     _apply_text_facts(enhanced, details, overwrite=True)
+    combined_text = original + "\n" + details
+    # Model output cannot invent a garment category. This prevents an explicit
+    # jacket from being copied into bottoms as matching suit pants.
+    for garment in ("top", "outerwear", "bottom", "shoes"):
+        if not re.search(CLOTHES[garment], combined_text):
+            enhanced[garment] = ""
     # Explicit category associations override model guesses (e.g. shirt brand on shoes).
     for garment, brand_key in (("top", "top_brand"), ("outerwear", "outerwear_brand"),
                                ("bottom", "bottom_brand"), ("shoes", "shoes_brand"),
@@ -282,6 +303,9 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     # are commonly copied into accessories even when the user stated none.
     enhanced["accessories"] = _merge_words(
         *_explicit_accessories(original), *_explicit_accessories(details)
+    )
+    enhanced["special_features"] = _merge_words(
+        *_explicit_special_features(original), *_explicit_special_features(details)
     )
     enhanced["facial_hair"] = _explicit_facial_hair(details) or _explicit_facial_hair(original)
     # A last-seen place alone is never evidence of the sender's region.

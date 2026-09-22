@@ -191,3 +191,16 @@ def test_generation_defaults_to_korean_but_respects_explicit_nationality(monkeyp
     assert "Depict the fictional person as Japanese" in build_generation_prompt(
         {**base, "nationality": "일본인"}, ""
     )
+
+
+def test_generation_prompt_strengthens_haircut_and_possessions(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    from app import build_generation_prompt
+
+    prompt = build_generation_prompt({
+        "gender": "남성", "hair_style": "버섯머리", "top": "검은색 반팔티",
+        "accessories": "흰색 텀블러 분홍색 뚜껑 빨대",
+    }, "")
+    assert "no center part" in prompt
+    assert "every stated possession" in prompt
