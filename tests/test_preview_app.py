@@ -83,11 +83,11 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
 
     assert not app.exception
     assert app.metric[0].value == "1회"
-    field_values = {item.label: item.value for item in app.text_input}
-    assert field_values["체형"] == "마른 편"
-    assert field_values["외투·겉옷"] == "흰색 외투"
-    assert field_values["겉옷 브랜드"] == ""
     rendered = "\n".join(markdown.value for markdown in app.markdown)
+    assert "마른 편" in rendered
+    assert "흰색 외투" in rendered
+    assert "정보 없음" not in rendered
+    assert "분석 결과 확인 및 수정" not in rendered
     assert "겉옷 여밈" not in rendered
     assert "서울역" in rendered
     visible_messages = "\n".join(

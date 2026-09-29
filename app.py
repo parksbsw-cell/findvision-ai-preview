@@ -16,7 +16,6 @@ from preview_logic import (
     BRANDS,
     analysis_message,
     enhance_features_from_text,
-    evidence_for_field,
     find_contradictions,
     image_mime,
     known_appearance_count,
@@ -858,6 +857,13 @@ def show_admin_analytics() -> None:
         st.error("통계 연결을 확인해 주세요. 현재 집계값을 불러오지 못했습니다.")
         return
 
+    total_users = int(metrics.get("total_users", 0) or 0)
+    weekly_users = int(metrics.get("weekly_active_users", 0) or 0)
+    returning_users = int(metrics.get("returning_users", 0) or 0)
+    weekly_returning = int(metrics.get("weekly_returning_users", 0) or 0)
+    retention_rate = 100.0 * returning_users / total_users if total_users else 0.0
+    weekly_retention_rate = 100.0 * weekly_returning / weekly_users if weekly_users else 0.0
+
     a, b, c = st.columns(3)
     a.metric("누적 생성 브라우저", f"{metrics['total_users']}개")
     b.metric(
@@ -866,15 +872,15 @@ def show_admin_analytics() -> None:
         help="최근 7일 안에 이미지 생성을 1회 이상 완료한 익명 브라우저",
     )
     c.metric(
-        "재방문 브라우저",
-        f"{metrics['returning_users']}개",
+        "재방문율",
+        f"{retention_rate:.1f}%",
         help="서로 다른 날짜에 이미지 생성을 2회 이상 완료한 익명 브라우저",
     )
 
     d, e, f = st.columns(3)
     d.metric(
-        "최근 7일 재방문 브라우저",
-        f"{metrics['weekly_returning_users']}개",
+        "최근 7일 재방문율",
+        f"{weekly_retention_rate:.1f}%",
         help="최근 7일 동안 서로 다른 날짜에 2회 이상 사용한 익명 브라우저",
     )
     e.metric("총 이미지 생성", f"{metrics['total_generations']}회")
@@ -1057,8 +1063,6 @@ if st.button("1단계: AI 인상착의 분석", type="primary", use_container_wi
             st.session_state["last_analysis"] = features
             st.session_state["analysis_message"] = message.strip()
             st.session_state.pop("last_result", None)
-            for key in EDITABLE_FIELDS:
-                st.session_state[f"edit_{key}"] = str(features.get(key, "") or "")
             st.session_state.pop("generation_error", None)
         except Exception:
             st.session_state["generation_error"] = "분석을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요."
@@ -1068,33 +1072,22 @@ edited_features = None
 mode = "빠른 생성"
 generate_clicked = False
 if features:
-    st.subheader("1. 분석 결과 확인 및 수정")
+    st.subheader("1. AI 분석 완료")
     for warning in find_contradictions(st.session_state.get("analysis_message", "")):
         st.warning("원문 확인 필요: " + warning)
-    st.caption("잘못 분석된 항목은 이미지 생성 전에 직접 고칠 수 있습니다. 빈칸은 정보 없음으로 처리됩니다.")
-    c1, c2 = st.columns(2)
-    for index, key in enumerate(EDITABLE_FIELDS):
-        target = c1 if index % 2 == 0 else c2
-        target.text_input(LABELS[key], key=f"edit_{key}", placeholder="정보 없음")
-    edited_features = dict(features)
-    for key in EDITABLE_FIELDS:
-        edited_features[key] = str(st.session_state.get(f"edit_{key}", "") or "").strip()
-    edited_features = sync_prompt_text_from_structured_features(edited_features)
-
-    with st.expander("원문 근거 확인", expanded=False):
-        evidence_found = False
-        original = st.session_state.get("analysis_message", "")
-        for key in EDITABLE_FIELDS:
-            value = edited_features.get(key, "")
-            evidence = evidence_for_field(original, key, value)
-            if evidence:
-                evidence_found = True
-                st.write(f"**{LABELS[key]}:** {evidence}")
-        if not evidence_found:
-            st.write("표시할 원문 근거가 없습니다.")
-    with st.expander("이미지 생성 AI에 전달하는 설명 확인"):
-        st.code(build_generation_prompt(edited_features, ""), language=None)
-        st.caption("이름·목격 위치·발송 지역은 이미지 생성 조건에서 제외합니다.")
+    edited_features = sync_prompt_text_from_structured_features(dict(features))
+    confirmed = [
+        (LABELS[key], str(edited_features.get(key, "") or "").strip())
+        for key in EDITABLE_FIELDS
+        if str(edited_features.get(key, "") or "").strip()
+        and key not in {"last_seen_location", "alert_area"}
+    ]
+    st.success(f"재난문자에서 이미지 생성에 사용할 특징 {len(confirmed)}개를 확인했습니다.")
+    if confirmed:
+        with st.expander("확인된 정보 보기", expanded=False):
+            for label, value in confirmed:
+                st.markdown(f"- **{label}:** {value}")
+    st.caption("잘못 인식된 경우 원문을 고친 뒤 1단계 분석을 다시 실행하세요.")
 
     mode = st.radio(
         "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
@@ -1175,8 +1168,10 @@ if result:
         "이미지 다운로드", data=best["image"], file_name=f"findvision-ai-result.{extension}",
         mime=mime_type, use_container_width=True,
     )
-    analysis_export = {LABELS.get(key, key): str(result["features"].get(key, "") or "정보 없음")
-                       for key in EDITABLE_FIELDS}
+    analysis_export = {
+        LABELS.get(key, key): str(result["features"].get(key, "") or "").strip()
+        for key in EDITABLE_FIELDS if str(result["features"].get(key, "") or "").strip()
+    }
     download_right.download_button(
         "분석 결과 다운로드", data=json.dumps(analysis_export, ensure_ascii=False, indent=2).encode("utf-8"),
         file_name="findvision-ai-analysis.json", mime="application/json", use_container_width=True,
