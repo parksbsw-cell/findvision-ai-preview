@@ -1,0 +1,5 @@
+[server]
+enableCORS = true
+enableXsrfProtection = true
+maxUploadSize = 2
+maxMessageSize = 5
