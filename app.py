@@ -1096,7 +1096,8 @@ message = st.text_area(
 )
 st.info(
     "입력 내용은 AI 분석과 이미지 생성을 위해 Cloudflare Workers AI로 전송됩니다. "
-    "이 앱의 통계 DB에는 원문과 생성 이미지를 저장하지 않습니다. 테스트에는 가상 예시를 사용하세요."
+    "전체 통계를 켜면 익명 브라우저 ID와 방문·생성 시각 및 생성 상태만 저장합니다. "
+    "재난문자 원문·이름·목격 위치·이미지는 통계 DB에 저장하지 않습니다. 테스트에는 가상 예시를 사용하세요."
 )
 
 if st.button("1단계: AI 인상착의 분석", type="primary", use_container_width=True):
