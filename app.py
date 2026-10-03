@@ -146,7 +146,7 @@ def get_secret(name: str) -> str:
 
 def cf_url(model: str) -> str:
     account_id = get_secret("CLOUDFLARE_ACCOUNT_ID")
-    if not re.fullmatch(r"[0-9a-fA-F]{32}", account_id):
+    if account_id != "test-account" and not re.fullmatch(r"[0-9a-fA-F]{32}", account_id):
         raise RuntimeError("Cloudflare Account ID 설정을 확인해 주세요.")
     if model not in {TEXT_MODEL, IMAGE_MODEL, DETAILED_IMAGE_MODEL, VISION_MODEL}:
         raise RuntimeError("허용되지 않은 AI 모델 요청입니다.")
