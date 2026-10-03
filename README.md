@@ -20,10 +20,13 @@
 - 자동 검수 불가 또는 후속 생성 실패에도 앞선 이미지를 보존합니다.
 - 결과와 하단 재생성 버튼은 화면 재실행 후에도 유지합니다.
 - 생성 이미지와 구조화된 분석 결과(JSON)를 내려받을 수 있습니다.
-- 요청은 세션별 10초 간격, 시간당 5회로 제한합니다.
+- 이미지 생성은 브라우저 단위로 10초 간격, 시간당 5회로 제한합니다.
+- Cloudflare Account ID와 사용 모델을 서버에서 검증하고, AI 응답 이미지의 크기·형식을 검사합니다.
+- 재난문자 원문 안의 지시문을 데이터로 취급하도록 분석 프롬프트를 보호합니다.
 - 입력의 외부 AI 전송과 앱 통계 저장 범위를 화면에 안내합니다.
-- 브라우저 완료 횟수를 쿠키로 보관합니다(1년, 기기별, 쿠키 삭제 시 초기화 가능).
-- 별도 Supabase 테이블을 설정하면 누적 생성·익명 브라우저·한국 날짜 기준 재방문을 SQL로 집계합니다.
+- 사이트 방문 횟수를 HMAC 서명한 익명 브라우저 쿠키로 보관합니다(1년, 기기별, 쿠키 삭제 시 초기화 가능).
+- Supabase를 연결하면 방문일 기준 7일 활성 사용자와 재방문율을 집계합니다. 원문·이미지·IP는 저장하지 않습니다.
+- 별도 Supabase 테이블을 설정하면 총 방문, 익명 브라우저, 한국 날짜 기준 재방문을 SQL로 집계합니다.
 
 이미지 제공자의 안전 검사 차단을 자동 우회하거나 재시도하지 않습니다.
 외형 추출과 이미지 검수에는 모델 오류가 있을 수 있습니다.
@@ -37,7 +40,7 @@ python -m pytest -q
 ruff check .
 ```
 
-Cloudflare 설정은 Streamlit Secrets의 CLOUDFLARE_ACCOUNT_ID와 CLOUDFLARE_API_TOKEN에 넣습니다.
+Cloudflare 설정은 Streamlit Secrets의 CLOUDFLARE_ACCOUNT_ID와 CLOUDFLARE_API_TOKEN에 넣습니다. 방문 쿠키 서명에는 이 API 토큰을 키로 사용합니다. 별도 VISITOR_COOKIE_SECRET을 설정해 토큰 교체와 독립적으로 유지할 수 있습니다.
 키는 소스에 저장하지 않습니다. 전체 통계는 [ANALYTICS_SETUP.md](ANALYTICS_SETUP.md)를 따릅니다.
 배포 확인은 [PREVIEW_SETUP.md](PREVIEW_SETUP.md)를 참고하세요.
 
