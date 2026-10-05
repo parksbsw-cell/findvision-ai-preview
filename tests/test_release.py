@@ -110,14 +110,17 @@ def test_precise_attempt_limits_and_partial_result(monkeypatch, vision_error, fa
 def test_analytics_is_private_and_emitted_once_per_result(monkeypatch):
     app, calls = setup_app(monkeypatch, analytics=True)
     events = [(u, k) for u, k in calls if "cluesight_events" in u]
-    assert len(events) == 1
-    payload = events[0][1]["json"]
+    assert [event[1]["json"]["event_type"] for event in events] == [
+        "visit", "analysis_completed", "image_generated"
+    ]
+    payload = events[-1][1]["json"]
     assert payload["attempts"] == 1
+    assert payload["app_version"] == "2026.10.05"
     assert payload["total_seconds"] >= payload["first_image_seconds"] >= 0
     assert not {"message", "image", "name", "last_seen_location"} & payload.keys()
     assert "Authorization" not in events[0][1]["headers"]
     app.run()
-    assert sum("cluesight_events" in u for u, _ in calls) == 1
+    assert sum("cluesight_events" in u for u, _ in calls) == 3
 
 
 def test_explicit_brand_and_region_override_model_hallucination():

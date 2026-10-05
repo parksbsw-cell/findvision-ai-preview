@@ -51,6 +51,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
+APP_VERSION = "2026.10.05"
 
 EDITABLE_FIELDS = [
     "gender", "age", "height", "weight", "body_type", "nationality", "skin_tone",
@@ -743,6 +744,7 @@ def log_analytics_event(user_id, event_type, verification_pass=None,
                    event_type=event_type, verification_pass=verification_pass,
                    verification_score=verification_score, attempts=attempts,
                    mode=mode, first_image_seconds=first_image_seconds, total_seconds=total_seconds)
+    payload["app_version"] = APP_VERSION
     try:
         response = requests.post(
             get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/cluesight_events",
@@ -775,6 +777,8 @@ def parse_created_at(value: str):
 
 
 def calculate_analytics(rows: list) -> dict:
+    visits = [row for row in rows if row.get("event_type") == "visit"]
+    analyses = [row for row in rows if row.get("event_type") == "analysis_completed"]
     generations = [row for row in rows if row.get("event_type") == "image_generated"]
 
     now = datetime.now(timezone.utc)
@@ -818,6 +822,8 @@ def calculate_analytics(rows: list) -> dict:
     avg_attempts = sum(attempts_values) / len(attempts_values) if attempts_values else 0.0
 
     return {
+        "visitors": len({row.get("user_id") for row in visits if row.get("user_id")}),
+        "analysis_users": len({row.get("user_id") for row in analyses if row.get("user_id")}),
         "total_users": len(all_users),
         "weekly_active_users": len(weekly_users),
         "returning_users": len(returning_users),
@@ -858,38 +864,71 @@ def show_admin_analytics() -> None:
         return
 
     total_users = int(metrics.get("total_users", 0) or 0)
+    visitors = int(metrics.get("visitors", 0) or 0)
+    analysis_users = int(metrics.get("analysis_users", 0) or 0)
     weekly_users = int(metrics.get("weekly_active_users", 0) or 0)
     returning_users = int(metrics.get("returning_users", 0) or 0)
     weekly_returning = int(metrics.get("weekly_returning_users", 0) or 0)
     retention_rate = 100.0 * returning_users / total_users if total_users else 0.0
     weekly_retention_rate = 100.0 * weekly_returning / weekly_users if weekly_users else 0.0
 
+    st.markdown("#### 사용 단계별 전환")
+    analysis_rate = 100.0 * analysis_users / visitors if visitors else 0.0
+    generation_rate = 100.0 * total_users / visitors if visitors else 0.0
+    analysis_to_generation = 100.0 * total_users / analysis_users if analysis_users else 0.0
     a, b, c = st.columns(3)
-    a.metric("누적 생성 브라우저", f"{metrics['total_users']}개")
-    b.metric(
-        "최근 7일 생성 브라우저",
-        f"{metrics['weekly_active_users']}개",
-        help="최근 7일 안에 이미지 생성을 1회 이상 완료한 익명 브라우저",
+    a.metric("방문", f"{visitors}명")
+    b.metric("분석 완료", f"{analysis_users}명", delta=f"방문 대비 {analysis_rate:.1f}%")
+    c.metric("이미지 생성 완료", f"{total_users}명", delta=f"방문 대비 {generation_rate:.1f}%")
+    st.caption(
+        f"분석 후 이미지 생성 전환율 {analysis_to_generation:.1f}% · "
+        f"방문 후 생성 전 이탈률 {100.0 - generation_rate:.1f}%"
     )
-    c.metric(
+
+    st.markdown("#### 재방문과 품질")
+    d, e, f = st.columns(3)
+    d.metric(
         "재방문율",
         f"{retention_rate:.1f}%",
         help="서로 다른 날짜에 이미지 생성을 2회 이상 완료한 익명 브라우저",
     )
-
-    d, e, f = st.columns(3)
-    d.metric(
+    e.metric(
         "최근 7일 재방문율",
         f"{weekly_retention_rate:.1f}%",
         help="최근 7일 동안 서로 다른 날짜에 2회 이상 사용한 익명 브라우저",
     )
-    e.metric("총 이미지 생성", f"{metrics['total_generations']}회")
     f.metric(
         "자동 검수 통과율",
         f"{metrics['verification_pass_rate']:.1f}%",
     )
 
-    st.caption(f"평균 이미지 생성 시도 횟수: {metrics['avg_attempts']:.2f}회")
+    g, h, i = st.columns(3)
+    g.metric("총 이미지 생성", f"{metrics['total_generations']}회")
+    h.metric("최근 7일 생성 사용자", f"{weekly_users}명")
+    i.metric("평균 생성 시도", f"{float(metrics['avg_attempts']):.2f}회")
+
+    before_count = int(metrics.get("before_generations", 0) or 0)
+    after_count = int(metrics.get("after_generations", 0) or 0)
+    if before_count or after_count:
+        st.markdown("#### 2026년 10월 5일 개선 전후")
+        before_time = float(metrics.get("before_avg_seconds", 0) or 0)
+        after_time = float(metrics.get("after_avg_seconds", 0) or 0)
+        before_pass = float(metrics.get("before_pass_rate", 0) or 0)
+        after_pass = float(metrics.get("after_pass_rate", 0) or 0)
+        j, k = st.columns(2)
+        j.metric(
+            "평균 생성 시간",
+            f"{after_time:.1f}초" if after_count else "수집 중",
+            delta=(f"{after_time - before_time:+.1f}초" if before_count and after_count else None),
+            delta_color="inverse",
+        )
+        k.metric(
+            "자동 검수 통과율 변화",
+            f"{after_pass:.1f}%" if after_count else "수집 중",
+            delta=(f"{after_pass - before_pass:+.1f}%p" if before_count and after_count else None),
+        )
+        st.caption(f"개선 전 {before_count}건 · 개선 후 {after_count}건을 비교합니다.")
+
     st.caption("익명 브라우저 기준이며 실제 사람 수와 다릅니다. 재방문 날짜는 한국 시간 기준입니다. 원문·이미지·이름·위치는 통계 DB에 저장하지 않습니다.")
 
 
@@ -989,7 +1028,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.09.20")
+st.caption(f"인상착의를 이해하는 AI 참고 이미지 · 버전 {APP_VERSION}")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
@@ -1018,6 +1057,10 @@ st.warning(
 
 
 if analytics_enabled():
+    if not st.session_state.get("visit_logged"):
+        st.session_state["visit_logged"] = log_analytics_event(
+            get_anonymous_user_id(), "visit"
+        )
     with st.expander("🔒 팀 관리자용 사용 통계", expanded=False):
         show_admin_analytics()
 
@@ -1062,6 +1105,7 @@ if st.button("1단계: AI 인상착의 분석", type="primary", use_container_wi
                 features = extract_features(message.strip())
             st.session_state["last_analysis"] = features
             st.session_state["analysis_message"] = message.strip()
+            log_analytics_event(get_anonymous_user_id(), "analysis_completed")
             st.session_state.pop("last_result", None)
             st.session_state.pop("generation_error", None)
         except Exception:
