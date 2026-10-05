@@ -52,6 +52,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
+APP_VERSION = "2026.10.05"
 _GENERATION_LOCK = threading.Lock()
 _GENERATION_BY_USER: dict[str, list[float]] = {}
 
@@ -1079,7 +1080,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.09.20")
+st.caption(f"인상착의를 이해하는 AI 참고 이미지 · 버전 {APP_VERSION}")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
@@ -1140,7 +1141,7 @@ message = st.text_area(
 )
 st.info(
     "입력 내용은 AI 분석과 이미지 생성을 위해 Cloudflare Workers AI로 전송됩니다. "
-    "전체 통계를 켜면 익명 브라우저 ID와 방문·생성 시각 및 생성 상태만 저장합니다. "
+    "전체 통계를 켜면 익명 브라우저 ID와 방문·분석·생성 시각 및 생성 상태만 저장합니다. "
     "재난문자 원문·이름·목격 위치·이미지는 통계 DB에 저장하지 않습니다. 테스트에는 가상 예시를 사용하세요."
 )
 
