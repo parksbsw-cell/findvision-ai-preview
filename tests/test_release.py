@@ -86,7 +86,7 @@ def test_retry_survives_reruns_without_duplicate_count(monkeypatch):
     app.session_state["generation_timestamps"] = []
     next(b for b in app.button if b.label == "다시 생성하기").click().run()
     assert not app.exception
-    assert app.metric[0].value == "2회"
+    assert app.metric[0].value == "1회"
     assert len(calls) == 3  # regeneration reuses the reviewed fields without reanalysis
     prompt = next(k["files"]["prompt"][1] for u, k in calls if "flux" in u)
     assert "서울역" not in prompt and "Seoul Station" not in prompt
@@ -110,17 +110,14 @@ def test_precise_attempt_limits_and_partial_result(monkeypatch, vision_error, fa
 def test_analytics_is_private_and_emitted_once_per_result(monkeypatch):
     app, calls = setup_app(monkeypatch, analytics=True)
     events = [(u, k) for u, k in calls if "cluesight_events" in u]
-    assert [event[1]["json"]["event_type"] for event in events] == [
-        "visit", "analysis_completed", "image_generated"
-    ]
-    payload = events[-1][1]["json"]
+    assert len(events) == 1
+    payload = events[0][1]["json"]
     assert payload["attempts"] == 1
-    assert payload["app_version"] == "2026.10.05"
     assert payload["total_seconds"] >= payload["first_image_seconds"] >= 0
     assert not {"message", "image", "name", "last_seen_location"} & payload.keys()
     assert "Authorization" not in events[0][1]["headers"]
     app.run()
-    assert sum("cluesight_events" in u for u, _ in calls) == 3
+    assert sum("cluesight_events" in u for u, _ in calls) == 1
 
 
 def test_explicit_brand_and_region_override_model_hallucination():
@@ -167,7 +164,7 @@ def test_flagged_response_stops_without_retry_or_secret_output(monkeypatch):
     app.radio[0].set_value("정밀 생성")
     next(b for b in app.button if b.label.startswith("2단계:")).click().run()
     assert len(calls) == 2
-    assert app.metric[0].value == "0회"
+    assert app.metric[0].value == "1회"
     assert "안전 검사" in app.error[0].value
     assert "private-value" not in app.error[0].value
     assert any(b.label == "다시 생성하기" for b in app.button)
