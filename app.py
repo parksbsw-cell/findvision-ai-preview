@@ -52,7 +52,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
-APP_VERSION = "2026.10.08"
+APP_VERSION = "2026.10.09"
 _GENERATION_LOCK = threading.Lock()
 _GENERATION_BY_USER: dict[str, list[float]] = {}
 
@@ -1097,6 +1097,24 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
                 total_seconds=total_seconds, interrupted=interrupted, event_id=str(uuid.uuid4()))
 
 
+@st.dialog("📱 실종 재난문자 이미지 알림", width="large")
+def show_message_result_popup(result: dict) -> None:
+    """Show a one-time, notification-like result after image generation."""
+    st.success("실종 재난문자 원문과 AI 참고 이미지가 준비되었습니다.")
+    st.markdown("**수신 문자 원문**")
+    st.write(result["message"])
+    best = result["best"]
+    st.image(
+        best["image"],
+        caption="FindVision AI 인상착의 참고 이미지",
+        use_container_width=True,
+    )
+    st.caption("참고 이미지는 실제 인물의 얼굴을 복원한 사진이 아닙니다.")
+    if st.button("확인", type="primary", use_container_width=True):
+        st.session_state["acknowledged_popup_event"] = result["event_id"]
+        st.rerun()
+
+
 # =========================================================
 # UI
 # =========================================================
@@ -1128,6 +1146,18 @@ st.warning(
     "생성 이미지는 실제 실종자의 얼굴을 복원한 사진이 아닙니다. "
     "재난문자에 적힌 인상착의를 이해하기 위한 참고 자료입니다."
 )
+
+with st.expander("📲 휴대전화 문자 연계 사용법", expanded=False):
+    st.markdown(
+        "1. 휴대전화 브라우저에서 이 사이트를 **홈 화면에 추가**합니다.\n"
+        "2. 실종 재난문자를 길게 눌러 **복사**합니다.\n"
+        "3. FindVision 바로가기를 열어 원문을 붙여 넣고 분석·생성을 누릅니다.\n"
+        "4. 생성이 끝나면 문자 원문과 참고 이미지가 알림 형태의 팝업으로 열립니다."
+    )
+    st.info(
+        "문자 도착만으로 자동 실행하려면 Android 보조 앱의 알림 접근 권한이 필요합니다. "
+        "현재 웹 버전은 문자 내용을 서버에 자동 수집하지 않는 복사·붙여넣기 방식입니다."
+    )
 
 
 if analytics_enabled():
@@ -1318,6 +1348,11 @@ if result:
         "분석 결과 다운로드", data=json.dumps(analysis_export, ensure_ascii=False, indent=2).encode("utf-8"),
         file_name="findvision-ai-analysis.json", mime="application/json", use_container_width=True,
     )
+    if (
+        is_missing_alert(result["message"])
+        and st.session_state.get("acknowledged_popup_event") != result["event_id"]
+    ):
+        show_message_result_popup(result)
 
 if result or st.session_state.get("generation_error"):
     if st.button("다시 생성하기", type="primary", use_container_width=True):
