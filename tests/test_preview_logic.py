@@ -139,6 +139,22 @@ def test_walking_cane_and_rubber_shoes_are_preserved_in_natural_alert_sentence()
     assert "오른손에 갈색 보행용 지팡이" in facts["accessories"]
 
 
+def test_model_hair_defaults_are_removed_when_alert_does_not_mention_hair():
+    facts = enhance_features_from_text(
+        {
+            "hair_color": "검은색",
+            "hair_length": "짧은 편",
+            "hair_texture": "직모",
+            "hair_style": "스포츠머리",
+            "skin_tone": "보통",
+        },
+        "실종 남성 81세, 키 167cm, 검은색 고무신 착용",
+        "",
+    )
+    for key in ("hair_color", "hair_length", "hair_texture", "hair_style", "skin_tone"):
+        assert facts[key] == ""
+
+
 def test_only_explicit_accessories_survive_model_output():
     original = "검은색 반팔티, 작은 가방, 휴대폰, 손목 시계 착용"
     model = {"accessories": "검은색 반팔티 작은 가방 휴대폰 시계"}

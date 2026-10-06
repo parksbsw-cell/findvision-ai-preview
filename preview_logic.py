@@ -338,10 +338,12 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     explicit: dict[str, Any] = {}
     _apply_text_facts(explicit, original)
     _apply_text_facts(explicit, details, overwrite=True)
-    for key in ("body_type", "hair_color", "hair_length", "hair_texture", "hair_style",
-                "hat_type", "hat_color"):
-        if _has_value(explicit, key):
-            enhanced[key] = explicit[key]
+    # These visible traits are frequent model defaults (for example, black
+    # short hair). Treat the deterministic facts from the user's text as the
+    # authority so an omitted trait remains unknown instead of being invented.
+    for key in ("body_type", "skin_tone", "hair_color", "hair_length",
+                "hair_texture", "hair_style", "hat_type", "hat_color"):
+        enhanced[key] = explicit.get(key, "")
     inner_top, outer_top = _explicit_top_layers(combined_text)
     if inner_top and outer_top:
         enhanced["top"] = inner_top
@@ -363,8 +365,6 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
         if brand is None and garment == "shoes" and "크록스" in original + details:
             brand = "크록스"
         enhanced[brand_key] = brand or ""
-    for key in ("body_type", "hair_style"):
-        enhanced[key] = explicit.get(key, "")
     if re.search(r"단발(?:머리)?", combined_text):
         enhanced["hair_length"] = "턱선 길이"
     if "생머리" in combined_text:
