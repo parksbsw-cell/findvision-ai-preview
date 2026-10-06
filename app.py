@@ -52,7 +52,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
-APP_VERSION = "2026.10.07"
+APP_VERSION = "2026.10.08"
 _GENERATION_LOCK = threading.Lock()
 _GENERATION_BY_USER: dict[str, list[float]] = {}
 
@@ -1197,7 +1197,13 @@ if features:
     st.subheader("1. AI 분석 완료")
     for warning in find_contradictions(st.session_state.get("analysis_message", "")):
         st.warning("원문 확인 필요: " + warning)
-    edited_features = sync_prompt_text_from_structured_features(dict(features))
+    # Re-apply deterministic extraction on every render. This also repairs an
+    # analysis already stored in the Streamlit session when extraction rules
+    # are upgraded during a deployment.
+    edited_features = enhance_features_from_text(
+        dict(features), st.session_state.get("analysis_message", ""), ""
+    )
+    edited_features = sync_prompt_text_from_structured_features(edited_features)
     confirmed = [
         (LABELS[key], str(edited_features.get(key, "") or "").strip())
         for key in EDITABLE_FIELDS

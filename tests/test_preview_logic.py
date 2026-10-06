@@ -126,6 +126,19 @@ def test_walking_cane_and_rubber_shoes_are_preserved():
     assert "오른손에 갈색 지팡이" in facts["accessories"]
 
 
+def test_walking_cane_and_rubber_shoes_are_preserved_in_natural_alert_sentence():
+    facts = enhance_features_from_text(
+        {},
+        (
+            "실종 남성 81세, 키 167cm, 오른손에 갈색 보행용 지팡이를 들고 "
+            "검은색 고무신을 착용함. 발견 시 경찰서로 연락 바랍니다."
+        ),
+        "",
+    )
+    assert facts["shoes"] == "검은색 고무신"
+    assert "오른손에 갈색 보행용 지팡이" in facts["accessories"]
+
+
 def test_only_explicit_accessories_survive_model_output():
     original = "검은색 반팔티, 작은 가방, 휴대폰, 손목 시계 착용"
     model = {"accessories": "검은색 반팔티 작은 가방 휴대폰 시계"}
