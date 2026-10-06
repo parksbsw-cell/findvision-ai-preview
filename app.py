@@ -52,7 +52,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
-APP_VERSION = "2026.10.05"
+APP_VERSION = "2026.10.07"
 _GENERATION_LOCK = threading.Lock()
 _GENERATION_BY_USER: dict[str, list[float]] = {}
 
@@ -254,6 +254,8 @@ def extract_features(original: str) -> dict:
 8. 겉옷이 있더라도 top을 삭제하지 않는다. 단, 겉옷 안의 상의가 명시되지 않았으면 top은 비운다.
 9. 소지품과 액세서리는 색상·부품·형태를 생략하지 말고 accessories에 적는다.
    예: "흰색 텀블러, 분홍색 뚜껑, 빨대, 여러 색상의 가방 끈".
+10. 지팡이는 신발이 아니라 accessories에 적고, 손 위치와 색상이 있으면 그대로 보존한다.
+11. 고무신은 shoes에 적는다. 운동화·슬리퍼·구두로 바꾸지 않는다.
 
 image_prompt_en 규칙:
 - 반드시 자연스럽고 정확한 영어로 작성한다.
@@ -337,6 +339,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("코트", "coat"), ("외투", "coat"), ("겉옷", "outerwear"),
         ("슬랙스", "slacks"), ("치마", "skirt"), ("레깅스", "leggings"),
         ("부츠", "boots"), ("구두", "dress shoes"), ("샌들", "sandals"),
+        ("고무신", "traditional Korean rubber shoes"),
         ("단화", "flat shoes"), ("백팩", "backpack"),
         ("검은색", "black"),
         ("검정색", "black"),
@@ -390,6 +393,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("휴대폰", "phone"),
         ("지갑", "wallet"),
         ("우산", "umbrella"),
+        ("지팡이", "walking cane"),
         ("목걸이", "necklace"),
         ("팔찌", "bracelet"),
         ("손목시계", "wristwatch"),
@@ -455,6 +459,20 @@ def get_known_appearance_count(features: dict) -> int:
 
 def get_missing_recommended(features: dict) -> list[str]:
     return missing_recommended(features)
+
+
+def is_missing_alert(text: str) -> bool:
+    """Conservative local check; the original message is never sent for this decision."""
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not normalized:
+        return False
+    missing_signal = bool(re.search(r"실종|찾습니다|배회|보호자를\s*찾", normalized))
+    person_signal = bool(re.search(r"\d{1,3}\s*세|남성|여성|남자|여자|키\s*\d", normalized))
+    appearance_signal = bool(re.search(
+        r"착용|인상착의|상의|하의|바지|티셔츠|모자|신발|고무신|지팡이|머리", normalized
+    ))
+    sender_signal = bool(re.search(r"경찰청|경찰서|안전안내문자|재난문자", normalized))
+    return missing_signal and person_signal and (appearance_signal or sender_signal)
 
 
 # =========================================================
@@ -972,8 +990,12 @@ def show_admin_analytics() -> None:
 
     g, h, i = st.columns(3)
     g.metric("총 이미지 생성", f"{metrics['total_generations']}회")
-    h.metric("최근 7일 방문", f"{weekly_users}명")
-    i.metric("평균 생성 시도", f"{float(metrics['avg_attempts']):.2f}회")
+    h.metric("재방문 사용자", f"{returning_users}명")
+    i.metric("최근 7일 재방문 사용자", f"{weekly_returning}명")
+    j, k, average_attempts_metric = st.columns(3)
+    j.metric("전체 방문 횟수", f"{metrics['total_visits']}회")
+    k.metric("최근 7일 방문 사용자", f"{weekly_users}명")
+    average_attempts_metric.metric("평균 생성 시도", f"{float(metrics['avg_attempts']):.2f}회")
     st.caption(f"전체 사이트 방문: {metrics['total_visits']}회")
 
     before_count = int(metrics.get("before_generations", 0) or 0)
@@ -984,11 +1006,11 @@ def show_admin_analytics() -> None:
         after_time = float(metrics.get("after_avg_seconds", 0) or 0)
         before_pass = float(metrics.get("before_pass_rate", 0) or 0)
         after_pass = float(metrics.get("after_pass_rate", 0) or 0)
-        j, k = st.columns(2)
-        j.metric("평균 생성 시간", f"{after_time:.1f}초" if after_count else "수집 중",
+        before_after_left, before_after_right = st.columns(2)
+        before_after_left.metric("평균 생성 시간", f"{after_time:.1f}초" if after_count else "수집 중",
                  delta=(f"{after_time - before_time:+.1f}초" if before_count and after_count else None),
                  delta_color="inverse")
-        k.metric("자동 검수 통과율 변화", f"{after_pass:.1f}%" if after_count else "수집 중",
+        before_after_right.metric("자동 검수 통과율 변화", f"{after_pass:.1f}%" if after_count else "수집 중",
                  delta=(f"{after_pass - before_pass:+.1f}%p" if before_count and after_count else None))
         st.caption(f"개선 전 {before_count}건 · 개선 후 {after_count}건을 비교합니다.")
 
@@ -1139,6 +1161,13 @@ message = st.text_area(
     placeholder="받은 실종 재난문자 원문을 수정하지 않고 붙여 넣으세요.",
     height=170, max_chars=1500,
 )
+if message.strip():
+    if is_missing_alert(message):
+        st.success("실종 재난문자 형식으로 확인되었습니다.")
+    else:
+        st.info(
+            "실종 재난문자 형식이 확실하지 않습니다. 가상 테스트 문장이라면 그대로 분석할 수 있습니다."
+        )
 st.info(
     "입력 내용은 AI 분석과 이미지 생성을 위해 Cloudflare Workers AI로 전송됩니다. "
     "전체 통계를 켜면 익명 브라우저 ID와 방문·분석·생성 시각 및 생성 상태만 저장합니다. "
@@ -1236,7 +1265,21 @@ if result:
                f"{duration_label} {result['total_seconds']:.1f}초 · "
                f"{result['width']}×{result['height']}px · 총 {result['attempts']}회 생성")
     st.caption("각 요청에서 측정한 시간입니다. 속도·인상착의 정확도를 보장하지 않습니다.")
-    st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
+    with st.container(border=True):
+        st.markdown("### 📱 실종 재난문자 알림 미리보기")
+        if is_missing_alert(result["message"]):
+            st.success("실종 재난문자로 판별된 원문과 생성 참고 이미지입니다.")
+        else:
+            st.warning("실종 재난문자 형식을 확정하지 못한 테스트 입력입니다.")
+        st.write(result["message"])
+        st.image(
+            best["image"],
+            caption=f"FindVision AI 인상착의 참고 이미지 · {best['attempt']}차 생성 결과",
+            use_container_width=True,
+        )
+        st.caption(
+            "웹 미리보기입니다. 실제 문자 수신 즉시 자동 팝업은 SMS 권한이 있는 Android 앱이나 기관 연동이 필요합니다."
+        )
     if verdict.get("skipped"):
         st.info("빠른 생성은 속도를 위해 자동 검수를 생략했습니다. 결과를 직접 확인해 주세요.")
     elif not verdict["available"]:
