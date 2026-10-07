@@ -124,7 +124,7 @@ def test_image_provider_failure_shows_no_fake_image(monkeypatch):
                     "top": "검은색 반팔티", "bottom": "검은색 바지", "shoes": "검은색 크록스",
                 }}
             )
-        if "flux-2-klein" in url:
+        if "flux-2-klein" in url or "flux-2-dev" in url:
             return FakeImageRateLimitResponse()
         raise AssertionError(f"Unexpected API: {url}")
 
@@ -142,6 +142,47 @@ def test_image_provider_failure_shows_no_fake_image(monkeypatch):
     assert "실제 이미지 생성에 실패했습니다" in errors
     assert not app.image
     assert not any(button.label == "다시 생성하기" for button in app.button)
+
+
+
+def test_throttled_fast_model_tries_photorealistic_model(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
+    calls = []
+    one_pixel_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+        "AAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg=="
+    )
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        if "llama-3.1" in url:
+            return FakeResponse(
+                {"response": {
+                    "gender": "남성", "age": "18세", "height": "175cm",
+                    "top": "검은색 반팔티", "bottom": "검은색 바지", "shoes": "검은색 크록스",
+                }}
+            )
+        if "flux-2-klein" in url:
+            return FakeImageRateLimitResponse()
+        if "flux-2-dev" in url:
+            assert kwargs["files"]["steps"][1] == "25"
+            return FakeResponse({"image": base64.b64encode(one_pixel_png).decode()})
+        raise AssertionError(f"Unexpected API: {url}")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=10).run()
+    app.text_area[0].set_value("가상 테스트: 18세 남성, 키 175cm, 검은색 반팔티, 검은색 바지, 검은색 크록스")
+    next(button for button in app.button if button.label.startswith("1단계:")).click().run()
+    app.radio[0].set_value("빠른 생성")
+    next(button for button in app.button if button.label.startswith("2단계:")).click().run()
+
+    assert not app.exception
+    assert not app.error
+    assert len(app.image) == 1
+    assert any("flux-2-dev" in url for url, _ in calls)
+
+
 
 
 def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypatch):
