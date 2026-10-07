@@ -29,6 +29,21 @@ class FakeImageRateLimitResponse:
         }
 
 
+class FakeDailyQuotaResponse:
+    status_code = 429
+    ok = False
+    headers = {}
+
+    def json(self):
+        return {
+            "success": False,
+            "errors": [{
+                "code": 4006,
+                "message": "You have exhausted your daily free allocation of 10,000 neurons.",
+            }],
+        }
+
+
 def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
@@ -141,7 +156,36 @@ def test_image_provider_failure_shows_no_fake_image(monkeypatch):
     assert "4006" in errors
     assert "실제 이미지 생성에 실패했습니다" in errors
     assert not app.image
-    assert not any(button.label == "다시 생성하기" for button in app.button)
+    assert any(button.label == "다시 생성하기" for button in app.button)
+
+
+def test_daily_neuron_quota_does_not_retry_same_account_fallback(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append(url)
+        if "llama-3.1" in url:
+            return FakeResponse({"response": {
+                "gender": "남성", "age": "18세", "height": "175cm",
+                "top": "검은색 반팔티", "bottom": "검은색 바지", "shoes": "검은색 운동화",
+            }})
+        if "flux-2-klein" in url:
+            return FakeDailyQuotaResponse()
+        raise AssertionError(f"Daily quota must stop retries: {url}")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=10).run()
+    app.text_area[0].set_value("가상 테스트: 18세 남성, 검은색 반팔티, 검은색 바지, 검은색 운동화")
+    next(button for button in app.button if button.label.startswith("1단계:")).click().run()
+    app.radio[0].set_value("빠른 생성")
+    next(button for button in app.button if button.label.startswith("2단계:")).click().run()
+
+    assert not app.exception
+    assert len(calls) == 2  # analysis + one failed image request; no second image model call
+    assert "오전 9시" in "\n".join(item.value for item in app.error)
+    assert not app.image
 
 
 
@@ -238,3 +282,4 @@ def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypat
     assert "The stated outerwear must" not in prompts["generation"]
     assert "do not require a coat or jacket" in prompts["vision"]
     assert "required outerwear type/color/layer" not in prompts["vision"]
+
