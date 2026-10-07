@@ -29,7 +29,7 @@ METADATA = {
     "hat_type": ("hat_brand", "브랜드"),
     "hat_color": ("hat_brand", "브랜드"),
 }
-COLORS = r"검은색|검정색|검은|검정|흰색|하얀색|흰|하얀|회색|빨간색|빨간|붉은색|붉은|파란색|파란|남색|초록색|초록|노란색|노란|베이지색|베이지|갈색|분홍색|분홍|보라색|보라|주황색|주황"
+COLORS = r"검은색|검정색|검은|검정|흰색|하얀색|흰|하얀|회색|빨간색|빨간|붉은색|붉은|파란색|파란|남색|초록색|초록|노란색|노란|베이지색|베이지|갈색|분홍색|분홍|보라색|보라|주황색|주황|은색|금색"
 BRANDS = (
     "뉴발란스", "아디다스", "나이키", "푸마", "언더아머", "데상트", "휠라",
     "노스페이스", "디스커버리", "내셔널지오그래픽", "유니클로", "무신사",
@@ -44,11 +44,11 @@ HAIRSTYLES = (
     "묶은머리", "땋은머리", "곱슬머리", "파마머리", "파마",
 )
 CLOTHES = {
-    "top": r"반팔\s*티(?:셔츠)?|긴팔\s*티(?:셔츠)?|티셔츠|맨투맨|후드티|폴로티|카라티|셔츠|니트|상의",
+    "top": r"반팔\s*티(?:셔츠)?|긴팔\s*티(?:셔츠)?|후드\s*(?:티(?:셔츠)?|상의|옷)?|티셔츠|맨투맨|폴로티|카라티|블라우스|셔츠|니트|(?<!색)상의",
     "outerwear": r"후드\s*집업|바람막이|패딩|점퍼|자켓|재킷|코트|외투|겉옷|조끼|작업복",
     "bottom": r"반바지|긴바지|청바지|슬랙스|치마|레깅스|바지|하의",
-    "shoes": r"운동화|크록스|슬리퍼|샌들|구두|단화|부츠|신발",
-    "hat_type": r"캡모자|야구모자|벙거지|버킷햇|비니|중절모|모자",
+    "shoes": r"맨발|맨발로|고무신|운동화|크록스|슬리퍼|샌들|구두|단화|부츠|신발",
+    "hat_type": r"등산모자|캡모자|야구모자|벙거지|버킷햇|비니|중절모|모자",
 }
 
 
@@ -70,6 +70,16 @@ def _merge_words(*parts: str) -> str:
             if word and word not in words:
                 words.append(word)
     return " ".join(words)
+
+
+def _merge_phrases(*parts: str) -> str:
+    """Deduplicate complete facts without separating colors from their nouns."""
+    phrases: list[str] = []
+    for part in parts:
+        phrase = re.sub(r"\s+", " ", str(part or "")).strip()
+        if phrase and phrase not in phrases:
+            phrases.append(phrase)
+    return " ".join(phrases)
 
 
 def _normalize_color(value: str) -> str:
@@ -95,7 +105,7 @@ def _color_in(value: str) -> str:
 def _extract_clothing(text: str, clothing_words: str) -> str:
     pattern = (
         rf"({COLORS})?\s*(?:(?:{'|'.join(re.escape(b) for b in BRANDS)})\s*)?"
-        rf"((?:(?:로고\s*(?:있는|없는)|무지|긴팔|반팔|긴|짧은)\s*)*)"
+        rf"((?:(?:로고\s*(?:있는|없는)|무지|학교|얇은|두꺼운|긴팔|반팔|긴|짧은)\s*)*)"
         rf"({clothing_words})"
     )
     matches = list(re.finditer(pattern, text))
@@ -103,6 +113,19 @@ def _extract_clothing(text: str, clothing_words: str) -> str:
         return ""
     match = max(matches, key=lambda item: len("".join(part or "" for part in item.groups())))
     return _merge_words(_normalize_color(match.group(1) or ""), match.group(2), match.group(3))
+
+
+def _explicit_top_layers(text: str) -> tuple[str, str]:
+    """Extract an inner top and an explicitly layered overshirt."""
+    match = re.search(r"(?:안에|속에)\s*(.+?)\s*(?:를|을)?\s*(?:입고|입은|착용하고).*?"
+                      r"(?:그\s*위에|위에는?)\s*(.+)", text)
+    if not match:
+        return "", ""
+    inner_text, outer_text = match.groups()
+    outer_text = re.sub(rf"학교\s*({COLORS})", r"\1 학교", outer_text)
+    inner = _extract_clothing(inner_text, CLOTHES["top"])
+    outer = _extract_clothing(outer_text, CLOTHES["top"])
+    return inner, outer
 
 
 def _explicit_brand(text: str, key: str) -> str | None:
@@ -137,19 +160,58 @@ def _explicit_accessories(text: str) -> list[str]:
     if re.search(r"(?:소지품|액세서리)\s*[:：]?\s*(?:없음|없다|없)", text):
         return []
     found: list[str] = []
+    color_or_detail = rf"(?:(?:{COLORS})|여러\s*색상의|다색|투명한?)?\s*"
     for pattern, label in (
-        (r"작은\s*가방", "작은가방"), (r"백팩", "백팩"),
-        (r"가방", "가방"), (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
-        (r"지갑", "지갑"), (r"우산", "우산"),
-        (r"목걸이", "목걸이"), (r"팔찌", "팔찌"), (r"시계", "시계"),
+        (rf"({color_or_detail}가방\s*끈)", ""),
+        (rf"({color_or_detail}텀블러)", ""),
+        (rf"({color_or_detail}뚜껑)", ""),
+        (rf"({color_or_detail}빨대)", ""),
+        (rf"({color_or_detail}버클(?:\s*장식)?)", ""),
+        (r"((?:양쪽|양손|두\s*개(?:의)?|한쪽)?\s*목발(?:을|로)?\s*(?:사용|이용|짚고|짚으며)?)", ""),
+        (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}우산)", ""),
+        (rf"({color_or_detail}(?:작은\s*)?(?:손가방|백팩|가방))", ""),
+        (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
+        (rf"((?:왼손목|오른손목)(?:에)?\s*{color_or_detail}(?:손목\s*)?시계)", ""),
+        (rf"({color_or_detail}(?:손목\s*)?시계)", ""),
+        (rf"((?:목에\s*)?{color_or_detail}(?:[가-힣]+\s*모양\s*)?목걸이)", ""),
+        (rf"({color_or_detail}(?:[가-힣]+\s*모양\s*)?팔찌)", ""),
+        (rf"({color_or_detail}우산)", ""),
+        (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}(?:보행용\s*)?지팡이)", ""),
+        (rf"({color_or_detail}(?:보행용\s*)?지팡이)", ""),
+        (rf"({color_or_detail}지갑)", ""),
         (r"소지품\s*[:：]?\s*([가-힣A-Za-z0-9]+)", ""),
     ):
-        if label == "가방" and re.search(r"작은\s*가방", text):
-            continue
         match = re.search(pattern, text)
         if not match:
             continue
         value = match.group(1) if not label and match.groups() else label
+        value = re.sub(r"작은\s+가방", "작은가방", value).strip()
+        if "목발" in value:
+            value = "양쪽 목발" if re.search(r"양쪽|양손|두\s*개", value) else "목발"
+        if re.fullmatch(r"손목\s*시계", value):
+            value = "시계"
+        if value and value not in found:
+            found.append(value)
+    return [
+        phrase for phrase in found
+        if not any(phrase != other and phrase in other for other in found)
+    ]
+
+
+def _explicit_special_features(text: str) -> list[str]:
+    found: list[str] = []
+    if re.search(r"(?:옷차림|상하의|상의\s*(?:와|/)\s*하의|옷|의복|복장)\s*(?:모두\s*)?(?:없음|없다|미착용)|(?:옷을\s*(?:안\s*입|입지\s*않)|나체|알몸|벌거벗)", text):
+        found.append("의복 미착용")
+    if re.search(r"(?:모든|전체|전부)\s*단추(?:를)?\s*(?:풀어|푼|열어|연)", text):
+        found.append("모든 단추를 푼 상태")
+    elif re.search(r"단추(?:를)?\s*(?:풀어|푼|열어|연)", text):
+        found.append("단추를 푼 상태")
+    elif re.search(r"(?:모든|전체|전부)\s*단추(?:를)?\s*(?:잠가|잠근|채워|채운)", text):
+        found.append("모든 단추를 잠근 상태")
+    for match in re.finditer(rf"((?:{COLORS})?\s*(?:큰|작은)?\s*(?:단추|로고|문신|흉터))", text):
+        value = re.sub(r"\s+", " ", match.group(1)).strip()
+        if value == "단추" and any("단추" in item and "상태" in item for item in found):
+            continue
         if value and value not in found:
             found.append(value)
     return found
@@ -169,13 +231,44 @@ def _explicit_facial_hair(text: str) -> str:
     return ""
 
 
+def _explicit_nationality(text: str) -> str:
+    """Return nationality only for an explicit demonym or nationality statement."""
+    patterns = (
+        (r"(?:대한민국|한국)(?:\s*국적|인|\s*출신)", "한국"),
+        (r"(?:미국|일본|중국|캐나다|영국|프랑스|독일|러시아|호주|뉴질랜드|베트남|태국|필리핀|인도|이탈리아|스페인)(?:\s*국적|인|\s*출신)", None),
+        (r"외국인", "외국인(국적 미상)"),
+    )
+    for pattern, country in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        if country:
+            return country
+        token = re.search(r"미국|일본|중국|캐나다|영국|프랑스|독일|러시아|호주|뉴질랜드|베트남|태국|필리핀|인도|이탈리아|스페인", match.group(0))
+        return token.group(0) if token else ""
+    return ""
+
+
 def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = False) -> None:
     if not text.strip():
         return
     if overwrite or not _has_value(features, "skin_tone"):
-        match = re.search(r"피부(?:톤|는)?\s*(밝은\s*편|어두운\s*편|보통|희고|검은\s*편)", text)
-        if match:
-            features["skin_tone"] = match.group(1)
+        skin_tones = (
+            ("새까만", "매우 어두운 피부톤"), ("매우 어두운", "매우 어두운 피부톤"),
+            ("짙은 갈색", "짙은 갈색 피부톤"), ("어두운 편", "짙은 갈색 피부톤"),
+            ("검은 편", "짙은 갈색 피부톤"), ("검은", "짙은 갈색 피부톤"),
+            ("까무잡잡한", "따뜻한 갈색 피부톤"), ("가무잡잡한", "따뜻한 갈색 피부톤"),
+            ("구릿빛", "따뜻한 갈색 피부톤"), ("짙은 편", "짙은 갈색 피부톤"),
+            ("살짝 탄", "약간 그을린 피부톤"), ("약간 탄", "약간 그을린 피부톤"),
+            ("살짝 그을린", "약간 그을린 피부톤"), ("약간 그을린", "약간 그을린 피부톤"),
+            ("햇볕에 탄", "그을린 피부톤"), ("그을린 편", "그을린 피부톤"),
+            ("밝은 편", "밝은 피부톤"), ("희고", "밝은 피부톤"),
+            ("보통", "보통 피부톤"),
+        )
+        for raw_tone, normalized_tone in skin_tones:
+            if re.search(rf"피부(?:색|톤)?(?:은|는|이|가)?\s*{re.escape(raw_tone)}|{re.escape(raw_tone)}\s*피부", text):
+                features["skin_tone"] = normalized_tone
+                break
     if overwrite or not _has_value(features, "hair_color"):
         color = _find_color_before(text, r"(?:머리|머리색)")
         if not color:
@@ -189,6 +282,8 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
             features["hair_length"] = match.group(1).replace("짧은", "짧음")
     if "직모" in text and (overwrite or not _has_value(features, "hair_texture")):
         features["hair_texture"] = "직모"
+    if "생머리" in text and (overwrite or not _has_value(features, "hair_texture")):
+        features["hair_texture"] = "직모"
     if "곱슬" in text and (overwrite or not _has_value(features, "hair_texture")):
         features["hair_texture"] = "곱슬"
     for style in HAIRSTYLES:
@@ -198,6 +293,8 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
                 "반삭머리": "반삭", "단발머리": "단발",
             }.get(style, style)
             break
+    if re.search(r"단발(?:머리)?", text) and (overwrite or not _has_value(features, "hair_length")):
+        features["hair_length"] = "턱선 길이"
     if overwrite or not _has_value(features, "body_type"):
         match = re.search(r"(고도\s*비만|비만|저체중|통통한\s*편|마른\s*편|마름|뚱뚱한\s*편|건장한\s*편|보통\s*체형)", text)
         if match:
@@ -235,10 +332,20 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         features["shoes_brand"] = match.group(1)
         if _has_value(features, "shoes") and match.group(1) not in str(features["shoes"]):
             features["shoes"] = _merge_words(match.group(1), str(features["shoes"]))
-    hat_color = _find_color_before(text, r"(?:캡모자|야구모자|벙거지|버킷햇|비니|모자)")
-    hat_kind = next((kind for kind in ("캡모자", "야구모자", "벙거지", "버킷햇", "비니", "중절모") if kind in text), "")
+    hat_match = re.search(
+        rf"({COLORS})?\s*((?:챙\s*(?:넓은|좁은)\s*)?"
+        r"(?:등산모자|캡모자|야구모자|벙거지|버킷햇|비니|중절모|모자))",
+        text,
+    )
+    hat_color = _normalize_color(hat_match.group(1)) if hat_match and hat_match.group(1) else ""
+    hat_kind = hat_match.group(2).strip() if hat_match else ""
     if hat_kind and (overwrite or not _has_value(features, "hat_type")):
-        features["hat_type"] = "캡모자" if hat_kind == "야구모자" else hat_kind
+        if hat_kind == "야구모자":
+            features["hat_type"] = "캡모자"
+        elif hat_kind == "모자":
+            features["hat_type"] = "모자(종류 불명)"
+        else:
+            features["hat_type"] = hat_kind
     elif "모자" in text and (overwrite or not _has_value(features, "hat_type")):
         features["hat_type"] = "모자(종류 불명)"
     if hat_color and (overwrite or not _has_value(features, "hat_color")):
@@ -263,6 +370,29 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     enhanced = dict(features)
     _apply_text_facts(enhanced, original, overwrite=False)
     _apply_text_facts(enhanced, details, overwrite=True)
+    combined_text = original + "\n" + details
+    explicit: dict[str, Any] = {}
+    _apply_text_facts(explicit, original)
+    _apply_text_facts(explicit, details, overwrite=True)
+    # These visible traits are frequent model defaults (for example, black
+    # short hair). Treat the deterministic facts from the user's text as the
+    # authority so an omitted trait remains unknown instead of being invented.
+    for key in ("body_type", "skin_tone", "hair_color", "hair_length",
+                "hair_texture", "hair_style", "hat_type", "hat_color"):
+        enhanced[key] = explicit.get(key, "")
+    # A non-Korean nationality must be explicit in the source; otherwise use the Korean default in the prompt.
+    enhanced["nationality"] = _explicit_nationality(combined_text)
+    inner_top, outer_top = _explicit_top_layers(combined_text)
+    if inner_top and outer_top:
+        enhanced["top"] = inner_top
+        enhanced["outerwear"] = outer_top
+    # Model output cannot invent a garment category. This prevents an explicit
+    # jacket from being copied into bottoms as matching suit pants.
+    for garment in ("top", "outerwear", "bottom", "shoes"):
+        if garment == "outerwear" and inner_top and outer_top:
+            continue
+        if not re.search(CLOTHES[garment], combined_text):
+            enhanced[garment] = ""
     # Explicit category associations override model guesses (e.g. shirt brand on shoes).
     for garment, brand_key in (("top", "top_brand"), ("outerwear", "outerwear_brand"),
                                ("bottom", "bottom_brand"), ("shoes", "shoes_brand"),
@@ -273,15 +403,20 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
         if brand is None and garment == "shoes" and "크록스" in original + details:
             brand = "크록스"
         enhanced[brand_key] = brand or ""
-    for key in ("body_type", "hair_style"):
-        explicit = {}
-        _apply_text_facts(explicit, original)
-        _apply_text_facts(explicit, details, overwrite=True)
-        enhanced[key] = explicit.get(key, "")
+    if re.search(r"맨발", combined_text):
+        enhanced["shoes"] = "맨발"
+        enhanced["shoes_brand"] = ""
+    if re.search(r"단발(?:머리)?", combined_text):
+        enhanced["hair_length"] = "턱선 길이"
+    if "생머리" in combined_text:
+        enhanced["hair_texture"] = "직모"
     # Do not trust free-form model output for this category. Clothing and hats
     # are commonly copied into accessories even when the user stated none.
-    enhanced["accessories"] = _merge_words(
+    enhanced["accessories"] = _merge_phrases(
         *_explicit_accessories(original), *_explicit_accessories(details)
+    )
+    enhanced["special_features"] = _merge_words(
+        *_explicit_special_features(original), *_explicit_special_features(details)
     )
     enhanced["facial_hair"] = _explicit_facial_hair(details) or _explicit_facial_hair(original)
     # A last-seen place alone is never evidence of the sender's region.
@@ -351,16 +486,16 @@ EVIDENCE_KEYWORDS = {
     "gender": ("남성", "여성", "남자", "여자"),
     "age": ("세", "나이"), "height": ("키", "cm"), "weight": ("몸무게", "kg"),
     "body_type": ("체형", "비만", "저체중", "통통", "마른", "건장"),
-    "skin_tone": ("피부", "피부톤"), "hair_color": ("머리색", "머리카락"),
+    "skin_tone": ("피부", "피부톤", "그을린", "탄 피부", "구릿빛", "까무잡잡", "짙은 갈색"), "hair_color": ("머리색", "머리카락"),
     "hair_length": ("머리길이", "머리 길이", "장발", "단발", "짧"),
     "hair_texture": ("직모", "곱슬"), "hair_style": HAIRSTYLES,
     "top": ("상의", "반팔", "긴팔", "티셔츠", "셔츠", "니트", "후드"),
     "outerwear": ("외투", "겉옷", "점퍼", "자켓", "재킷", "코트", "패딩", "작업복"),
     "bottom": ("하의", "반바지", "긴바지", "청바지", "슬랙스", "치마"),
-    "shoes": ("신발", "운동화", "크록스", "슬리퍼", "샌들", "구두", "부츠"),
+    "shoes": ("신발", "고무신", "운동화", "크록스", "슬리퍼", "샌들", "구두", "부츠"),
     "hat_type": ("모자", "비니", "버킷햇", "벙거지"), "hat_color": ("모자",),
     "glasses": ("안경",), "facial_hair": ("수염", "콧수염", "턱수염"),
-    "accessories": ("가방", "휴대폰", "지갑", "우산", "목걸이", "팔찌", "시계", "소지품"),
+    "accessories": ("가방", "휴대폰", "지갑", "우산", "지팡이", "목발", "목걸이", "팔찌", "시계", "소지품"),
     "special_features": ("특징", "흉터", "문신", "점"),
     "last_seen_location": ("목격", "위치"), "alert_area": ("발송 지역", "재난문자"),
 }

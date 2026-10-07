@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var accessKey: EditText
     private lateinit var enabled: CheckBox
     private lateinit var status: TextView
+    private lateinit var visitCount: TextView
     private val prefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -92,6 +93,8 @@ class MainActivity : Activity() {
         })
         status = TextView(this).apply { textSize = 14f; setPadding(0, dp(12), 0, dp(6)) }
         page.addView(status)
+        visitCount = TextView(this).apply { textSize = 14f; setPadding(0, dp(4), 0, dp(6)) }
+        page.addView(visitCount)
         page.addView(TextView(this).apply {
             text = "감지는 휴대전화가 재난문자 앱의 알림을 FindVision AI에 전달할 때 작동합니다. 제조사·OS 설정에 따라 일부 셀 브로드캐스트가 알림으로 전달되지 않을 수 있고, 방해금지 모드·배터리 절약 설정은 팝업을 늦출 수 있습니다. 이 앱은 SMS 읽기 권한을 요구하지 않습니다."
             textSize = 12f
@@ -99,13 +102,36 @@ class MainActivity : Activity() {
         })
         setContentView(ScrollView(this).apply { addView(page) })
         updateStatus()
+        refreshVisitCount()
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 20)
         }
     }
 
-    override fun onResume() { super.onResume(); if (::status.isInitialized) updateStatus() }
+    override fun onResume() {
+        super.onResume()
+        if (::status.isInitialized) {
+            updateStatus()
+            refreshVisitCount()
+        }
+    }
+
+    private fun refreshVisitCount() {
+        val url = prefs.getString(KEY_URL, "").orEmpty()
+        val key = prefs.getString(KEY_ACCESS, "").orEmpty()
+        if (!url.startsWith("https://") || key.length < 20) {
+            visitCount.text = "앱 방문 횟수: 서버 연결 설정 후 표시됩니다."
+            return
+        }
+        Thread {
+            val count = runCatching { MobileApi(this, url, key).getVisitCount() }.getOrNull()
+            runOnUiThread {
+                visitCount.text = count?.let { "이 앱의 방문 횟수: ${it}회" }
+                    ?: "앱 방문 횟수를 불러오지 못했습니다."
+            }
+        }.start()
+    }
 
     private fun saveSettings() {
         val url = apiUrl.text.toString().trim().trimEnd('/')

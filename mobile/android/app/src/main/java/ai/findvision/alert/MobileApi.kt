@@ -17,6 +17,8 @@ class MobileApi(private val context: Context, private val baseUrl: String, priva
         }
     }
 
+    fun getVisitCount(): Int = JSONObject(request("GET", "/api/session")).optInt("count")
+
     fun generateReference(originalText: String): File {
         request("GET", "/api/session")
         val analyzed = JSONObject(request("POST", "/api/analyze", JSONObject().put("text", originalText)))

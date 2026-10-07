@@ -12,7 +12,7 @@ The Streamlit site cannot receive device SMS by itself. The Android companion ta
 - `CLOUDFLARE_API_TOKEN` (AI inference permission only)
 - `MOBILE_ACCESS_KEY` (a random, revocable team connection code at least 20 characters)
 
-The Android settings screen needs the deployed HTTPS API URL and the team connection code. The service key is checked with constant-time comparison. Raw alert text is processed in memory and is not stored in the usage database; generated images are held in memory on the server and cached on the phone. The phone cache keeps the latest 24 generated images.
+The Android settings screen needs the deployed HTTPS API URL and the team connection code. The service key is checked with constant-time comparison. Raw alert text is processed in memory and is not stored in the visit database; generated images are held in memory on the server and cached on the phone. The phone cache keeps the latest 24 generated images. Anonymous app visits are counted in sessions separated by 30 minutes; image generations are not counted as visits.
 
 ## Android setup
 

@@ -26,20 +26,33 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 def database():
     con = sqlite3.connect(DB)
-    con.execute('CREATE TABLE IF NOT EXISTS usage (owner TEXT PRIMARY KEY, count INTEGER NOT NULL)')
+    con.execute('''CREATE TABLE IF NOT EXISTS visits (
+        owner TEXT PRIMARY KEY, count INTEGER NOT NULL, last_visit REAL NOT NULL
+    )''')
     return con
 
 
 def count(owner):
     with database() as con:
-        row = con.execute('SELECT count FROM usage WHERE owner=?', (owner,)).fetchone()
+        row = con.execute('SELECT count FROM visits WHERE owner=?', (owner,)).fetchone()
     return row[0] if row else 0
+
+
+def record_visit(owner):
+    now = time.time()
+    with database() as con:
+        con.execute('''INSERT INTO visits(owner, count, last_visit) VALUES (?, 1, ?)
+            ON CONFLICT(owner) DO UPDATE SET
+            count = count + CASE WHEN excluded.last_visit - visits.last_visit >= 1800 THEN 1 ELSE 0 END,
+            last_visit = excluded.last_visit''', (owner, now))
+        row = con.execute('SELECT count FROM visits WHERE owner=?', (owner,)).fetchone()
+    return row[0]
 
 
 def ready():
     return all(os.getenv(k) for k in (
-        'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN', 'MOBILE_ACCESS_KEY'
-    ))
+        'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN'
+    )) and len(os.getenv('MOBILE_ACCESS_KEY', '')) >= 20
 
 
 @app.middleware('http')
@@ -94,7 +107,8 @@ class Generation(BaseModel):
 
 @app.get('/api/session')
 def session(request: Request):
-    return {'ready': ready(), 'count': count(request.state.owner), 'labels': {
+    visits = record_visit(request.state.owner)
+    return {'ready': ready(), 'count': visits, 'labels': {
         k: provider.LABELS[k] for k in provider.EDITABLE_FIELDS}}
 
 
@@ -151,8 +165,6 @@ def generate(job_id, features, mode):
         with lock:
             job = jobs[job_id]
             job.update(best, state='done', first_seconds=round(first, 1), total_seconds=round(time.perf_counter() - started, 1))
-            with database() as con:
-                con.execute('INSERT INTO usage VALUES (?,1) ON CONFLICT(owner) DO UPDATE SET count=count+1', (job['owner'],))
     except Exception as exc:
         with lock:
             jobs[job_id].update(state='error', error='이미지 제공자의 안전 검사로 생성이 중단되었습니다.' if '안전 검사' in str(exc) else '이미지를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.')

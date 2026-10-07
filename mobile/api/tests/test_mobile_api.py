@@ -62,6 +62,18 @@ def test_sparse_prompt_uses_korean_default_without_inventing_location():
     )
 
     assert "Korean" in prompt
-    assert "neutral contemporary outfit" in prompt
+    assert "plain, unbranded" in prompt
     assert "서울역" not in prompt
     assert "alert area" not in prompt.lower()
+
+
+def test_visits_increment_per_session_not_per_generation(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "DB", str(tmp_path / "visits.sqlite3"))
+    clock = [1000.0]
+    monkeypatch.setattr(server.time, "time", lambda: clock[0])
+
+    assert server.record_visit("anonymous-device") == 1
+    clock[0] += 60
+    assert server.record_visit("anonymous-device") == 1
+    clock[0] += 1800
+    assert server.record_visit("anonymous-device") == 2
