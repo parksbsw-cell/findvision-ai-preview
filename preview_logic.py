@@ -47,7 +47,7 @@ CLOTHES = {
     "top": r"반팔\s*티(?:셔츠)?|긴팔\s*티(?:셔츠)?|후드\s*(?:티(?:셔츠)?|상의|옷)?|티셔츠|맨투맨|폴로티|카라티|블라우스|셔츠|니트|(?<!색)상의",
     "outerwear": r"후드\s*집업|바람막이|패딩|점퍼|자켓|재킷|코트|외투|겉옷|조끼|작업복",
     "bottom": r"반바지|긴바지|청바지|슬랙스|치마|레깅스|바지|하의",
-    "shoes": r"고무신|운동화|크록스|슬리퍼|샌들|구두|단화|부츠|신발",
+    "shoes": r"맨발|맨발로|고무신|운동화|크록스|슬리퍼|샌들|구두|단화|부츠|신발",
     "hat_type": r"등산모자|캡모자|야구모자|벙거지|버킷햇|비니|중절모|모자",
 }
 
@@ -167,6 +167,7 @@ def _explicit_accessories(text: str) -> list[str]:
         (rf"({color_or_detail}뚜껑)", ""),
         (rf"({color_or_detail}빨대)", ""),
         (rf"({color_or_detail}버클(?:\s*장식)?)", ""),
+        (r"((?:양쪽|양손|두\s*개(?:의)?|한쪽)?\s*목발(?:을|로)?\s*(?:사용|이용|짚고|짚으며)?)", ""),
         (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}우산)", ""),
         (rf"({color_or_detail}(?:작은\s*)?(?:손가방|백팩|가방))", ""),
         (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
@@ -185,6 +186,8 @@ def _explicit_accessories(text: str) -> list[str]:
             continue
         value = match.group(1) if not label and match.groups() else label
         value = re.sub(r"작은\s+가방", "작은가방", value).strip()
+        if "목발" in value:
+            value = "양쪽 목발" if re.search(r"양쪽|양손|두\s*개", value) else "목발"
         if re.fullmatch(r"손목\s*시계", value):
             value = "시계"
         if value and value not in found:
@@ -197,6 +200,8 @@ def _explicit_accessories(text: str) -> list[str]:
 
 def _explicit_special_features(text: str) -> list[str]:
     found: list[str] = []
+    if re.search(r"(?:옷차림|상하의|상의\s*(?:와|/)\s*하의|옷|의복|복장)\s*(?:모두\s*)?(?:없음|없다|미착용)|(?:옷을\s*(?:안\s*입|입지\s*않)|나체|알몸|벌거벗)", text):
+        found.append("의복 미착용")
     if re.search(r"(?:모든|전체|전부)\s*단추(?:를)?\s*(?:풀어|푼|열어|연)", text):
         found.append("모든 단추를 푼 상태")
     elif re.search(r"단추(?:를)?\s*(?:풀어|푼|열어|연)", text):
@@ -226,13 +231,44 @@ def _explicit_facial_hair(text: str) -> str:
     return ""
 
 
+def _explicit_nationality(text: str) -> str:
+    """Return nationality only for an explicit demonym or nationality statement."""
+    patterns = (
+        (r"(?:대한민국|한국)(?:\s*국적|인|\s*출신)", "한국"),
+        (r"(?:미국|일본|중국|캐나다|영국|프랑스|독일|러시아|호주|뉴질랜드|베트남|태국|필리핀|인도|이탈리아|스페인)(?:\s*국적|인|\s*출신)", None),
+        (r"외국인", "외국인(국적 미상)"),
+    )
+    for pattern, country in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        if country:
+            return country
+        token = re.search(r"미국|일본|중국|캐나다|영국|프랑스|독일|러시아|호주|뉴질랜드|베트남|태국|필리핀|인도|이탈리아|스페인", match.group(0))
+        return token.group(0) if token else ""
+    return ""
+
+
 def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = False) -> None:
     if not text.strip():
         return
     if overwrite or not _has_value(features, "skin_tone"):
-        match = re.search(r"피부(?:톤|는)?\s*(밝은\s*편|어두운\s*편|보통|희고|검은\s*편)", text)
-        if match:
-            features["skin_tone"] = match.group(1)
+        skin_tones = (
+            ("새까만", "매우 어두운 피부톤"), ("매우 어두운", "매우 어두운 피부톤"),
+            ("짙은 갈색", "짙은 갈색 피부톤"), ("어두운 편", "짙은 갈색 피부톤"),
+            ("검은 편", "짙은 갈색 피부톤"), ("검은", "짙은 갈색 피부톤"),
+            ("까무잡잡한", "따뜻한 갈색 피부톤"), ("가무잡잡한", "따뜻한 갈색 피부톤"),
+            ("구릿빛", "따뜻한 갈색 피부톤"), ("짙은 편", "짙은 갈색 피부톤"),
+            ("살짝 탄", "약간 그을린 피부톤"), ("약간 탄", "약간 그을린 피부톤"),
+            ("살짝 그을린", "약간 그을린 피부톤"), ("약간 그을린", "약간 그을린 피부톤"),
+            ("햇볕에 탄", "그을린 피부톤"), ("그을린 편", "그을린 피부톤"),
+            ("밝은 편", "밝은 피부톤"), ("희고", "밝은 피부톤"),
+            ("보통", "보통 피부톤"),
+        )
+        for raw_tone, normalized_tone in skin_tones:
+            if re.search(rf"피부(?:색|톤)?(?:은|는|이|가)?\s*{re.escape(raw_tone)}|{re.escape(raw_tone)}\s*피부", text):
+                features["skin_tone"] = normalized_tone
+                break
     if overwrite or not _has_value(features, "hair_color"):
         color = _find_color_before(text, r"(?:머리|머리색)")
         if not color:
@@ -344,6 +380,8 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     for key in ("body_type", "skin_tone", "hair_color", "hair_length",
                 "hair_texture", "hair_style", "hat_type", "hat_color"):
         enhanced[key] = explicit.get(key, "")
+    # A non-Korean nationality must be explicit in the source; otherwise use the Korean default in the prompt.
+    enhanced["nationality"] = _explicit_nationality(combined_text)
     inner_top, outer_top = _explicit_top_layers(combined_text)
     if inner_top and outer_top:
         enhanced["top"] = inner_top
@@ -445,7 +483,7 @@ EVIDENCE_KEYWORDS = {
     "gender": ("남성", "여성", "남자", "여자"),
     "age": ("세", "나이"), "height": ("키", "cm"), "weight": ("몸무게", "kg"),
     "body_type": ("체형", "비만", "저체중", "통통", "마른", "건장"),
-    "skin_tone": ("피부", "피부톤"), "hair_color": ("머리색", "머리카락"),
+    "skin_tone": ("피부", "피부톤", "그을린", "탄 피부", "구릿빛", "까무잡잡", "짙은 갈색"), "hair_color": ("머리색", "머리카락"),
     "hair_length": ("머리길이", "머리 길이", "장발", "단발", "짧"),
     "hair_texture": ("직모", "곱슬"), "hair_style": HAIRSTYLES,
     "top": ("상의", "반팔", "긴팔", "티셔츠", "셔츠", "니트", "후드"),
@@ -454,7 +492,7 @@ EVIDENCE_KEYWORDS = {
     "shoes": ("신발", "고무신", "운동화", "크록스", "슬리퍼", "샌들", "구두", "부츠"),
     "hat_type": ("모자", "비니", "버킷햇", "벙거지"), "hat_color": ("모자",),
     "glasses": ("안경",), "facial_hair": ("수염", "콧수염", "턱수염"),
-    "accessories": ("가방", "휴대폰", "지갑", "우산", "지팡이", "목걸이", "팔찌", "시계", "소지품"),
+    "accessories": ("가방", "휴대폰", "지갑", "우산", "지팡이", "목발", "목걸이", "팔찌", "시계", "소지품"),
     "special_features": ("특징", "흉터", "문신", "점"),
     "last_seen_location": ("목격", "위치"), "alert_area": ("발송 지역", "재난문자"),
 }
