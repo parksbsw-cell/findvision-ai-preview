@@ -40,6 +40,7 @@ cookie_controller = CookieController()
 TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
 IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
 DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
+PHOTO_REALISM_FALLBACK_MODEL = "@cf/black-forest-labs/flux-2-dev"
 VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
 MAX_ATTEMPTS = 3
@@ -541,17 +542,33 @@ def build_generation_prompt(
 
 
 def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, str]:
-    # FLUX.2 Klein은 REST API에서 multipart/form-data 사용
-    result = cloudflare_multipart_request(
-        DETAILED_IMAGE_MODEL if width >= DETAILED_WIDTH else IMAGE_MODEL,
-        {
-            "prompt": prompt,
-            "width": width,
-            "height": height,
-            # 값이 높을수록 프롬프트를 더 강하게 따르도록 유도
-            "guidance": 4.5 if width >= DETAILED_WIDTH else 4.0,
-        },
-    )
+    # Try the fast Klein model first, then a higher-fidelity photo model if Cloudflare
+    # throttles this request. The second path still uses the real image provider.
+    model = DETAILED_IMAGE_MODEL if width >= DETAILED_WIDTH else IMAGE_MODEL
+    fields = {
+        "prompt": prompt,
+        "width": width,
+        "height": height,
+        "guidance": 4.5 if width >= DETAILED_WIDTH else 4.0,
+    }
+    try:
+        result = cloudflare_multipart_request(model, fields)
+    except RuntimeError as primary_error:
+        primary_message = str(primary_error)
+        if not re.search(r"HTTP 429|오류 코드 (?:4006|3040)", primary_message):
+            raise
+        photo_fields = {
+            **fields,
+            "guidance": 3.5,
+            "steps": 25,
+        }
+        try:
+            result = cloudflare_multipart_request(PHOTO_REALISM_FALLBACK_MODEL, photo_fields)
+        except RuntimeError as photo_error:
+            raise RuntimeError(
+                f"기본 이미지 AI와 실사 보조 모델 모두 요청을 처리하지 못했습니다. "
+                f"기본 응답: {primary_message} 보조 모델 응답: {photo_error}"
+            ) from photo_error
 
     if not isinstance(result, dict) or not result.get("image"):
         raise RuntimeError("이미지 생성 결과를 받지 못했습니다.")
@@ -559,7 +576,6 @@ def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, st
     image_b64 = result["image"]
     image_bytes = base64.b64decode(image_b64)
     return image_bytes, image_b64, image_mime(image_bytes)
-
 
 # =========================================================
 # Vision AI 검수
