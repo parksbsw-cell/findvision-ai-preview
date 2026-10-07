@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: findvision-mobile-api
+    runtime: docker
+    rootDir: mobile
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: MOBILE_ACCESS_KEY
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MOBILE_DB_PATH
+        value: /var/data/usage.sqlite3
+    disk:
+      name: findvision-mobile-data
+      mountPath: /var/data
+      sizeGB: 1
