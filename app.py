@@ -1,5 +1,4 @@
 import base64
-import io
 import hmac
 import json
 import os
@@ -11,7 +10,6 @@ from typing import Any
 
 import requests
 import streamlit as st
-from PIL import Image, ImageDraw
 from streamlit_cookies_controller import CookieController
 
 from preview_logic import (
@@ -963,77 +961,6 @@ def record_generation_attempt(now: float | None = None) -> None:
     st.session_state.setdefault("generation_timestamps", []).append(now or time.time())
 
 
-def render_offline_reference_image(features: dict, width: int, height: int) -> bytes:
-    """Draw a clearly labeled, fast reference illustration when image AI is unavailable."""
-    width, height = max(384, min(int(width), 896)), max(576, min(int(height), 1152))
-    image = Image.new("RGB", (width, height), (246, 248, 251))
-    draw = ImageDraw.Draw(image)
-    sx, sy = width / 512, height / 768
-
-    def p(x, y):
-        return (round(x * sx), round(y * sy))
-
-    def box(x1, y1, x2, y2):
-        return tuple(round(v) for v in (x1 * sx, y1 * sy, x2 * sx, y2 * sy))
-
-    palette = {
-        "검은": (38, 42, 52), "검정": (38, 42, 52), "흰": (238, 239, 235),
-        "하얀": (238, 239, 235), "회색": (132, 142, 153), "빨간": (194, 65, 64),
-        "파란": (58, 112, 180), "남색": (45, 62, 99), "초록": (65, 126, 91),
-        "노란": (220, 177, 64), "베이지": (204, 184, 151), "갈색": (119, 81, 62),
-    }
-
-    def color(key, default):
-        value = str(features.get(key, "") or "")
-        return next((rgb for word, rgb in palette.items() if word in value), default)
-
-    skin = (225, 184, 150)
-    shirt = color("top", (112, 132, 154))
-    jacket = color("outerwear", (68, 82, 104))
-    pants = color("bottom", (58, 69, 86))
-    shoes = color("shoes", (238, 239, 235))
-    hair = color("hair_color", (48, 43, 40))
-    outline = (57, 65, 77)
-    line = max(2, round(3 * sx))
-    draw.rounded_rectangle(box(65, 35, 447, 730), radius=round(30*sx),
-                           fill="white", outline=(232, 235, 240), width=line)
-    draw.ellipse(box(154, 692, 358, 718), fill=(226, 230, 236))
-    draw.polygon([p(188,454), p(257,454), p(254,643), p(242,671), p(177,642)],
-                 fill=pants, outline=outline)
-    draw.polygon([p(256,454), p(326,454), p(321,642), p(301,671), p(250,643)],
-                 fill=pants, outline=outline)
-    for coords in ((178,657,254,684), (253,657,332,684)):
-        draw.rounded_rectangle(box(*coords), radius=round(10*sx), fill=shoes,
-                               outline=outline, width=line)
-    draw.rounded_rectangle(box(232,184,280,241), radius=round(10*sx), fill=skin)
-    draw.ellipse(box(202,94,310,220), fill=skin, outline=outline, width=line)
-    draw.ellipse(box(192,82,310,167), fill=hair, outline=outline, width=line)
-    draw.rectangle(box(196,128,204,163), fill=hair)
-    draw.rectangle(box(308,128,316,163), fill=hair)
-    draw.polygon([p(224,232),p(240,224),p(272,224),p(288,232),p(303,254),p(287,278),
-                  p(281,450),p(231,450),p(225,278),p(209,254)], fill=shirt, outline=outline)
-    draw.polygon([p(222,237),p(207,255),p(215,281),p(224,277),p(220,397),p(211,414),
-                  p(196,407),p(194,273)], fill=skin, outline=outline)
-    draw.polygon([p(290,237),p(305,255),p(297,281),p(288,277),p(292,397),p(301,414),
-                  p(316,407),p(318,273)], fill=skin, outline=outline)
-    if str(features.get("outerwear", "") or "").strip():
-        draw.polygon([p(224,232),p(250,242),p(250,448),p(231,448),p(224,276),p(213,258)],
-                     fill=jacket, outline=outline)
-        draw.polygon([p(288,232),p(262,242),p(262,448),p(281,448),p(288,276),p(299,258)],
-                     fill=jacket, outline=outline)
-    if "후드" in str(features.get("top", "")) + str(features.get("outerwear", "")):
-        draw.arc(box(213,220,299,291), start=180, end=360, fill=outline, width=line)
-    if str(features.get("hat_type", "") or "").strip():
-        draw.pieslice(box(198,82,314,151), start=180, end=360,
-                      fill=color("hat_type", (50,57,67)), outline=outline, width=line)
-    if any(word in str(features.get("accessories", "")) for word in ("가방","백팩","배낭")):
-        draw.rounded_rectangle(box(322,327,374,424), radius=round(12*sx),
-                               fill=(147,115,82), outline=outline, width=line)
-    output = io.BytesIO()
-    image.save(output, format="PNG", optimize=True)
-    return output.getvalue()
-
-
 def generate_reference_result(features: dict, message: str, mode: str) -> dict:
     started_at = time.perf_counter()
     best = None
@@ -1053,15 +980,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
             image_bytes, image_b64, mime_type = generate_image(prompt, width, height)
         except Exception as exc:
             if best is None:
-                image_bytes = render_offline_reference_image(features, width, height)
-                verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
-                           "feedback_en": "", "available": False, "skipped": True}
-                attempts_completed += 1
-                first_image_seconds = time.perf_counter() - started_at
-                best = {"attempt": attempt, "image": image_bytes, "mime_type": "image/png",
-                        "verification": verdict, "offline_fallback": True,
-                        "provider_error": str(exc)[:180]}
-                break
+                raise RuntimeError(f"실제 이미지 생성에 실패했습니다: {exc}") from exc
             interrupted = True
             break
         attempts_completed += 1
@@ -1217,6 +1136,8 @@ if features:
 
 run_requested = generate_clicked or st.session_state.pop("regenerate_requested", False)
 if run_requested and edited_features:
+    # Never keep an older image visible when a new generation request fails.
+    st.session_state.pop("last_result", None)
     limit_message = generation_limit_message()
     if limit_message:
         st.warning(limit_message)
@@ -1239,8 +1160,11 @@ if run_requested and edited_features:
                 first_image_seconds=result["first_image_seconds"], total_seconds=result["total_seconds"])
         except Exception as exc:
             error = str(exc)
-            st.session_state["generation_error"] = (error if "안전 검사" in error else
-                "생성을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.")
+            provider_error = "Cloudflare" in error or "HTTP " in error or "오류 코드" in error
+            st.session_state["generation_error"] = (
+                error if "안전 검사" in error or provider_error else
+                "생성을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요."
+            )
 
 if st.session_state.get("generation_error"):
     st.error(st.session_state["generation_error"])
@@ -1258,14 +1182,6 @@ if result:
                f"{result['width']}×{result['height']}px · 총 {result['attempts']}회 생성")
     st.caption("각 요청에서 측정한 시간입니다. 속도·인상착의 정확도를 보장하지 않습니다.")
     st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
-    if best.get("offline_fallback"):
-        provider_error = str(best.get("provider_error", ""))
-        status_match = re.search(r"HTTP \d{3}(?:, 오류 코드 \d+)?", provider_error)
-        reason = f" ({status_match.group(0)})" if status_match else ""
-        st.warning(
-            f"이미지 AI 제공자가{reason} 응답하지 않아 의상과 색상을 반영한 참고 그림을 표시했습니다. "
-            "사진 생성 결과가 아닙니다."
-        )
     if verdict.get("skipped"):
         st.info("빠른 생성은 속도를 위해 자동 검수를 생략했습니다. 결과를 직접 확인해 주세요.")
     elif not verdict["available"]:
@@ -1299,7 +1215,7 @@ if result:
         file_name="findvision-ai-analysis.json", mime="application/json", use_container_width=True,
     )
 
-if result or st.session_state.get("generation_error"):
+if result:
     if st.button("다시 생성하기", type="primary", use_container_width=True):
         st.session_state["regenerate_requested"] = True
         st.rerun()
