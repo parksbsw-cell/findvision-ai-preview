@@ -17,6 +17,18 @@ class FakeResponse:
         return {"success": True, "result": self.result}
 
 
+class FakeImageRateLimitResponse:
+    status_code = 429
+    ok = False
+    headers = {}
+
+    def json(self):
+        return {
+            "success": False,
+            "errors": [{"code": 4006, "message": "Rate limited"}],
+        }
+
+
 def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
@@ -98,6 +110,38 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     assert "검수 점수" not in visible_messages
     assert any(button.label == "다시 생성하기" for button in app.button)
     assert len(calls) == 2  # one extraction and one image; fast mode skips vision
+
+
+def test_image_provider_failure_shows_no_fake_image(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
+
+    def fake_post(url, **kwargs):
+        if "llama-3.1" in url:
+            return FakeResponse(
+                {"response": {
+                    "gender": "남성", "age": "18세", "height": "175cm",
+                    "top": "검은색 반팔티", "bottom": "검은색 바지", "shoes": "검은색 크록스",
+                }}
+            )
+        if "flux-2-klein" in url:
+            return FakeImageRateLimitResponse()
+        raise AssertionError(f"Unexpected API: {url}")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=10).run()
+    app.text_area[0].set_value("가상 테스트: 18세 남성, 키 175cm, 검은색 반팔티, 검은색 바지, 검은색 크록스")
+    next(button for button in app.button if button.label.startswith("1단계:")).click().run()
+    app.radio[0].set_value("빠른 생성")
+    next(button for button in app.button if button.label.startswith("2단계:")).click().run()
+
+    assert not app.exception
+    errors = "\\n".join(item.value for item in app.error)
+    assert "HTTP 429" in errors
+    assert "4006" in errors
+    assert "실제 이미지 생성에 실패했습니다" in errors
+    assert not app.image
+    assert not any(button.label == "다시 생성하기" for button in app.button)
 
 
 def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypatch):
