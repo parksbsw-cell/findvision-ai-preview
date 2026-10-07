@@ -3,20 +3,11 @@ package ai.findvision.alert
 import android.content.Context
 import org.json.JSONObject
 import java.io.File
-import java.net.CookieHandler
-import java.net.CookieManager
-import java.net.CookiePolicy
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
 class MobileApi(private val context: Context, private val baseUrl: String, private val accessKey: String) {
-    init {
-        if (CookieHandler.getDefault() == null) {
-            CookieHandler.setDefault(CookieManager(null, CookiePolicy.ACCEPT_ALL))
-        }
-    }
-
     fun getVisitCount(): Int = JSONObject(request("GET", "/api/session")).optInt("count")
 
     fun generateReference(originalText: String): File {
@@ -49,6 +40,7 @@ class MobileApi(private val context: Context, private val baseUrl: String, priva
         try {
             if (json != null) connection.outputStream.use { it.write(json.toString().toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
+            rememberSessionCookie(connection)
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (code !in 200..299) {
@@ -63,6 +55,7 @@ class MobileApi(private val context: Context, private val baseUrl: String, priva
         val connection = open(method, path, false)
         try {
             val code = connection.responseCode
+            rememberSessionCookie(connection)
             if (code !in 200..299) throw IllegalStateException("생성 이미지를 받지 못했습니다 ($code).")
             return connection.inputStream.use { it.readBytes() }
         } finally { connection.disconnect() }
@@ -77,12 +70,24 @@ class MobileApi(private val context: Context, private val baseUrl: String, priva
         connection.setRequestProperty("Authorization", "Bearer $accessKey")
         connection.setRequestProperty("X-FindVision", "1")
         connection.setRequestProperty("Accept", "application/json")
+        sessionCookie()?.let { connection.setRequestProperty("Cookie", it) }
         connection.instanceFollowRedirects = false
         if (body) {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         }
         return connection
+    }
+
+    private fun sessionCookie(): String? = context.getSharedPreferences("findvision_api_session", Context.MODE_PRIVATE)
+        .getString("cookie", null)
+
+    private fun rememberSessionCookie(connection: HttpURLConnection) {
+        val cookie = connection.getHeaderField("Set-Cookie")?.substringBefore(';')?.trim().orEmpty()
+        if (cookie.startsWith("fv_session=")) {
+            context.getSharedPreferences("findvision_api_session", Context.MODE_PRIVATE)
+                .edit().putString("cookie", cookie).apply()
+        }
     }
 
     private fun prune(dir: File) {
