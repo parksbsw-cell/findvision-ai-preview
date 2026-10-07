@@ -1243,7 +1243,13 @@ if result:
     st.caption("각 요청에서 측정한 시간입니다. 속도·인상착의 정확도를 보장하지 않습니다.")
     st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
     if best.get("offline_fallback"):
-        st.warning("이미지 AI 제공자가 응답하지 않아 의상과 색상을 반영한 참고 그림을 표시했습니다. 사진 생성 결과가 아닙니다.")
+        provider_error = str(best.get("provider_error", ""))
+        status_match = re.search(r"HTTP \d{3}", provider_error)
+        reason = f" ({status_match.group(0)})" if status_match else ""
+        st.warning(
+            f"이미지 AI 제공자가{reason} 응답하지 않아 의상과 색상을 반영한 참고 그림을 표시했습니다. "
+            "사진 생성 결과가 아닙니다."
+        )
     if verdict.get("skipped"):
         st.info("빠른 생성은 속도를 위해 자동 검수를 생략했습니다. 결과를 직접 확인해 주세요.")
     elif not verdict["available"]:
