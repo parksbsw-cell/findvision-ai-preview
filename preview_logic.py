@@ -403,6 +403,9 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
         if brand is None and garment == "shoes" and "크록스" in original + details:
             brand = "크록스"
         enhanced[brand_key] = brand or ""
+    if re.search(r"맨발", combined_text):
+        enhanced["shoes"] = "맨발"
+        enhanced["shoes_brand"] = ""
     if re.search(r"단발(?:머리)?", combined_text):
         enhanced["hair_length"] = "턱선 길이"
     if "생머리" in combined_text:
