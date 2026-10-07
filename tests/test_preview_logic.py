@@ -60,6 +60,21 @@ def test_generated_image_format_is_detected():
     assert image_mime(b"\xff\xd8\xffrest") == "image/jpeg"
 
 
+def test_short_realistic_alert_phrases_are_enough_for_image_generation():
+    original = "가상 테스트: 18세 남성, 175cm, 74kg, 검은색 반팔, 검은색 바지, 검은색 크록스, 안경"
+    recovered = enhance_features_from_text({}, original, "")
+    assert recovered["top"] == "검은색 반팔"
+    assert recovered["bottom"] == "검은색 바지"
+    assert recovered["shoes"] == "검은색 크록스"
+    assert recovered["glasses"] == "안경"
+    assert known_appearance_count(recovered) >= 3
+
+
+def test_explicit_absence_of_glasses_is_preserved():
+    recovered = enhance_features_from_text({}, "안경 없음", "")
+    assert recovered["glasses"] == "없음"
+
+
 def test_explicit_korean_details_recover_missing_clothing_and_hair():
     original = (
         "아시아인, 동양인, 남자, 17세, 키 177, 몸무게 62, 피부톤은 밝은 편, "
