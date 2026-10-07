@@ -187,8 +187,16 @@ def cloudflare_json_request(model: str, payload: dict, timeout: int = 120) -> An
             None,
         )
         code_suffix = f", 오류 코드 {provider_code}" if provider_code is not None else ""
+        provider_message = next(
+            (item.get("message", "") for item in provider_errors
+             if isinstance(item, dict) and item.get("message")),
+            "",
+        )
+        provider_detail = re.sub(r"\\s+", " ", str(provider_message)).strip()[:160]
+        detail_suffix = f" {provider_detail}" if provider_detail else ""
         raise RuntimeError(
-            f"AI 제공자 요청 실패 (HTTP {response.status_code}{code_suffix}). 잠시 후 다시 시도해 주세요."
+            f"AI 제공자 요청 실패 (HTTP {response.status_code}{code_suffix})."
+            f"{detail_suffix} 잠시 후 다시 시도해 주세요."
         )
 
     return data.get("result")
@@ -222,8 +230,16 @@ def cloudflare_multipart_request(model: str, fields: dict, timeout: int = 180) -
             None,
         )
         code_suffix = f", 오류 코드 {provider_code}" if provider_code is not None else ""
+        provider_message = next(
+            (item.get("message", "") for item in provider_errors
+             if isinstance(item, dict) and item.get("message")),
+            "",
+        )
+        provider_detail = re.sub(r"\\s+", " ", str(provider_message)).strip()[:160]
+        detail_suffix = f" {provider_detail}" if provider_detail else ""
         raise RuntimeError(
-            f"AI 제공자 요청 실패 (HTTP {response.status_code}{code_suffix}). 잠시 후 다시 시도해 주세요."
+            f"AI 제공자 요청 실패 (HTTP {response.status_code}{code_suffix})."
+            f"{detail_suffix} 잠시 후 다시 시도해 주세요."
         )
 
     return data.get("result")
