@@ -52,7 +52,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
-APP_VERSION = "2026.10.09"
+APP_VERSION = "2026.10.07"
 _GENERATION_LOCK = threading.Lock()
 _GENERATION_BY_USER: dict[str, list[float]] = {}
 
@@ -249,7 +249,7 @@ def extract_features(original: str) -> dict:
 3. "검은색 바지" -> bottom="검은색 바지". 긴바지/반바지를 추측하지 않는다.
 4. 피부톤, 곱슬/직모, 수염, 안경 등은 명시된 경우만 적는다.
 5. ambiguity_notes에는 구체적으로 정할 수 없는 부분을 한국어로 적는다.
-6. 티셔츠·셔츠·니트는 top, 자켓·점퍼·코트·바람막이·후드집업·패딩·외투는 outerwear로 분리한다.
+6. 티셔츠·셔츠·니트·후드티(후드 티, 후드)는 top, 자켓·점퍼·코트·바람막이·후드집업·패딩·외투는 outerwear로 분리한다. "후드집업"은 지퍼형 겉옷, "후드/후드티"는 풀오버 상의로 구분한다.
 7. 체형은 비만, 통통한 편, 마른 편, 저체중 등 명시된 경우 body_type에 적는다.
 8. 겉옷이 있더라도 top을 삭제하지 않는다. 단, 겉옷 안의 상의가 명시되지 않았으면 top은 비운다.
 9. 소지품과 액세서리는 색상·부품·형태를 생략하지 말고 accessories에 적는다.
@@ -328,7 +328,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("청바지", "jeans"), ("초록색", "green"), ("노란색", "yellow"),
         ("베이지색", "beige"), ("갈색", "brown"), ("분홍색", "pink"),
         ("보라색", "purple"), ("주황색", "orange"),
-        ("후드집업", "zip-up hoodie"), ("후드티", "hoodie"), ("맨투맨", "sweatshirt"),
+        ("후드집업", "zip-up hoodie"), ("후드 티셔츠", "hoodie"), ("후드 티", "hoodie"),
+        ("후드티", "hoodie"), ("후드", "hoodie"), ("맨투맨", "sweatshirt"),
         ("티셔츠", "T-shirt"), ("블라우스", "blouse"), ("셔츠", "shirt"),
         ("니트", "knit sweater"),
         ("학교", "school uniform"),
@@ -508,10 +509,26 @@ def build_generation_prompt(
         if features.get("hair_style") else ""
     )
     possessions = (
-        "Show every stated possession and accessory exactly once, with its stated color, shape, "
-        "parts and hand/body placement clearly visible. Do not merge, duplicate or substitute them. "
-        if features.get("accessories") else ""
+        "Show only these explicitly stated possessions/accessories: "
+        + str(features.get("accessories", "")).strip()
+        + ". Do not add any other bag, backpack, purse, phone, umbrella, jewelry, watch, or carried object. "
+        if features.get("accessories") else
+        "No possession or accessory was stated. Keep both hands empty and add absolutely no bag, backpack, purse, phone, umbrella, jewelry, watch, or other carried object. "
     )
+    raw_age = str(features.get("age", "") or "").strip()
+    age_match = re.search(r"\d{1,3}", raw_age)
+    if age_match:
+        age_instruction = (
+            f"Depict a person of the stated chronological age, {age_match.group(0)} years. "
+            "Keep facial maturity and skin consistent with that age; do not make the person look noticeably older or younger. "
+            "Do not add wrinkles, gray hair, hair loss, or other age cues unless explicitly stated. "
+        )
+    elif raw_age:
+        age_instruction = (
+            f"Depict someone within the stated age range ({raw_age}) and avoid making them look clearly older or younger. "
+        )
+    else:
+        age_instruction = ""
     button_state = (
         "The stated button/closure state is mandatory. Keep the outer shirt fully open so the inner "
         "top remains clearly visible. "
@@ -527,7 +544,8 @@ def build_generation_prompt(
         "high detail, plain light studio background and contemporary clothing. "
         + origin_instruction +
         "Match only the stated appearance facts; unspecified details are illustrative. "
-        "No extra person, extra limb, duplicate item, text, letters, logos, watermark or decorative props. "
+        + age_instruction +
+        "No extra person, extra limb, duplicate item, unlisted possession, text, letters, logos, watermark or decorative props. "
         + layers + " " + button_state + haircut + possessions + "\n" + description
     )
     if correction:
@@ -643,6 +661,17 @@ def verify_image(image_b64: str, mime_type: str, features: dict) -> dict:
         else ""
     )
 
+    age_value = str(features.get("age", "") or "").strip()
+    age_check = (
+        f"Stated age: {age_value}. Reject only if the person clearly appears much older or younger than this stated age/range; do not estimate an exact age or penalize normal photographic variation."
+        if age_value else "No age was stated; do not evaluate apparent age."
+    )
+    unlisted_items_check = (
+        "Only listed accessories are allowed: " + str(features.get("accessories", "")).strip() + "."
+        if str(features.get("accessories", "") or "").strip()
+        else "No accessories were stated. Reject any visible bag, backpack, purse, phone, umbrella, jewelry, watch, or other carried object."
+    )
+
     question = f"""
 Carefully verify this generated full-body reference image.
 
@@ -653,6 +682,8 @@ USER-SUPPLIED STRUCTURED APPEARANCE FACTS (source of truth):
 {structured_facts}
 
 {outerwear_check}
+{age_check}
+{unlisted_items_check}
 Never verify a brand by assuming a logo must appear.
 Name and location are context, not visual appearance requirements.
 
@@ -666,6 +697,7 @@ Reject the image if:
 - required shoes are wrong
 - required hat type/color is wrong
 - any stated possession/accessory is missing, duplicated, wrong in color/shape, or placed on the wrong hand/body area
+- any unlisted bag, accessory, jewelry item, or carried object appears
 - specified hair or skin characteristics are wrong
 - the full body is not visible
 - hands, feet or required carried items are cropped, hidden or anatomically malformed
@@ -1264,8 +1296,8 @@ if run_requested and edited_features:
     limit_message = generation_limit_message()
     if limit_message:
         st.warning(limit_message)
-    elif get_known_appearance_count(edited_features) < 3:
-        st.warning("인상착의 정보가 부족합니다. 옷·머리·신발 등 확인된 특징을 3개 이상 입력해 주세요.")
+    elif not any(key != "nationality" for key in visual_facts(edited_features)):
+        st.warning("생성할 인물 정보가 없습니다. 재난문자에서 성별·나이·옷차림 등 한 가지 이상을 확인해 주세요.")
     else:
         try:
             record_generation_attempt()
