@@ -516,12 +516,18 @@ def build_generation_prompt(
         "No possession or accessory was stated. Keep both hands empty and add absolutely no bag, backpack, purse, phone, umbrella, jewelry, watch, or other carried object. "
     )
     raw_age = str(features.get("age", "") or "").strip()
-    age_match = re.search(r"\d{1,3}", raw_age)
-    if age_match:
+    exact_age = re.search(r"(\d{1,3})\s*세", raw_age)
+    age_decade = re.search(r"(\d{2})\s*대", raw_age)
+    if exact_age:
         age_instruction = (
-            f"Depict a person of the stated chronological age, {age_match.group(0)} years. "
+            f"Depict a person of the stated chronological age, {exact_age.group(1)} years. "
             "Keep facial maturity and skin consistent with that age; do not make the person look noticeably older or younger. "
             "Do not add wrinkles, gray hair, hair loss, or other age cues unless explicitly stated. "
+        )
+    elif age_decade:
+        age_instruction = (
+            f"Depict an adult in their {age_decade.group(1)}s, consistent with that age range, "
+            "without making them look clearly older or younger. "
         )
     elif raw_age:
         age_instruction = (
@@ -1277,7 +1283,7 @@ if features:
         with st.expander("확인된 정보 보기", expanded=False):
             for label, value in confirmed:
                 st.markdown(f"- **{label}:** {value}")
-    st.caption("잘못 인식된 경우 원문을 고친 뒤 1단계 분석을 다시 실행하세요.")
+    st.caption("재난문자에 확인 가능한 정보가 한 가지 이상 있으면 생성할 수 있습니다. 적히지 않은 외형은 참고용으로만 표현됩니다. 잘못 인식된 경우 원문을 고친 뒤 분석을 다시 실행하세요.")
 
     mode = st.radio(
         "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
