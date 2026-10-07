@@ -44,7 +44,7 @@ HAIRSTYLES = (
     "묶은머리", "땋은머리", "곱슬머리", "파마머리", "파마",
 )
 CLOTHES = {
-    "top": r"반팔\s*티(?:셔츠)?|긴팔\s*티(?:셔츠)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|셔츠|니트|(?<!색)상의",
+    "top": r"반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|셔츠|니트|(?<!색)상의",
     "outerwear": r"후드\s*집업|바람막이|패딩|점퍼|자켓|재킷|코트|외투|겉옷|조끼|작업복",
     "bottom": r"반바지|긴바지|청바지|슬랙스|치마|레깅스|바지|하의",
     "shoes": r"운동화|크록스|슬리퍼|샌들|구두|단화|부츠|신발",
@@ -312,7 +312,10 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         features["hat_type"] = "모자(종류 불명)"
     if hat_color and (overwrite or not _has_value(features, "hat_color")):
         features["hat_color"] = hat_color
-    if re.search(r"안경\s*(?:쓰|착용|있)", text) and (overwrite or not _has_value(features, "glasses")):
+    if re.search(r"안경\s*(?:없음|없다|없|미착용)|안경을?\s*쓰지\s*않", text):
+        if overwrite or not _has_value(features, "glasses"):
+            features["glasses"] = "없음"
+    elif re.search(r"안경", text) and (overwrite or not _has_value(features, "glasses")):
         features["glasses"] = "안경"
     if re.search(r"수염\s*없", text) and (overwrite or not _has_value(features, "facial_hair")):
         features["facial_hair"] = "없음"
