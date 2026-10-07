@@ -182,7 +182,15 @@ def cloudflare_json_request(model: str, payload: dict, timeout: int = 120) -> An
         flagged = "flagged" in json.dumps(data).lower()
         if flagged:
             raise RuntimeError("이미지 제공자의 안전 검사로 생성이 중단되었습니다. 자동 재시도하지 않습니다.")
-        raise RuntimeError(f"AI 제공자 요청 실패 (HTTP {response.status_code}). 잠시 후 다시 시도해 주세요.")
+        provider_errors = data.get("errors", [])
+        provider_code = next(
+            (item.get("code") for item in provider_errors if isinstance(item, dict) and item.get("code") is not None),
+            None,
+        )
+        code_suffix = f", 오류 코드 {provider_code}" if provider_code is not None else ""
+        raise RuntimeError(
+            f"AI 제공자 요청 실패 (HTTP {response.status_code}{code_suffix}). 잠시 후 다시 시도해 주세요."
+        )
 
     return data.get("result")
 
@@ -209,7 +217,15 @@ def cloudflare_multipart_request(model: str, fields: dict, timeout: int = 180) -
         flagged = "flagged" in json.dumps(data).lower()
         if flagged:
             raise RuntimeError("이미지 제공자의 안전 검사로 생성이 중단되었습니다. 자동 재시도하지 않습니다.")
-        raise RuntimeError(f"AI 제공자 요청 실패 (HTTP {response.status_code}). 잠시 후 다시 시도해 주세요.")
+        provider_errors = data.get("errors", [])
+        provider_code = next(
+            (item.get("code") for item in provider_errors if isinstance(item, dict) and item.get("code") is not None),
+            None,
+        )
+        code_suffix = f", 오류 코드 {provider_code}" if provider_code is not None else ""
+        raise RuntimeError(
+            f"AI 제공자 요청 실패 (HTTP {response.status_code}{code_suffix}). 잠시 후 다시 시도해 주세요."
+        )
 
     return data.get("result")
 
@@ -301,7 +317,7 @@ verification_requirements_en 규칙:
         features["height"] = f"{height.group(1)}cm" if height else ""
         features["weight"] = f"{weight.group(1)}kg" if weight else ""
         features["_analysis_fallback_used"] = True
-        features["_analysis_provider_error"] = re.search(r"HTTP \d{3}", str(exc)).group(0) if re.search(r"HTTP \d{3}", str(exc)) else "AI 연결 실패"
+        features["_analysis_provider_error"] = re.search(r"HTTP \d{3}(?:, 오류 코드 \d+)?", str(exc)).group(0) if re.search(r"HTTP \d{3}", str(exc)) else "AI 연결 실패"
         return sync_prompt_text_from_structured_features(features)
 
     parsed = result.get("response", result) if isinstance(result, dict) else result
@@ -1244,7 +1260,7 @@ if result:
     st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
     if best.get("offline_fallback"):
         provider_error = str(best.get("provider_error", ""))
-        status_match = re.search(r"HTTP \d{3}", provider_error)
+        status_match = re.search(r"HTTP \d{3}(?:, 오류 코드 \d+)?", provider_error)
         reason = f" ({status_match.group(0)})" if status_match else ""
         st.warning(
             f"이미지 AI 제공자가{reason} 응답하지 않아 의상과 색상을 반영한 참고 그림을 표시했습니다. "
