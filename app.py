@@ -3,7 +3,6 @@ import hmac
 import json
 import os
 import re
-import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,8 +18,6 @@ from preview_logic import (
     enhance_features_from_text,
     find_contradictions,
     image_mime,
-    known_appearance_count,
-    missing_recommended,
     safe_count,
     verification_result,
     visual_facts,
@@ -49,12 +46,7 @@ FAST_WIDTH = 512
 FAST_HEIGHT = 768
 DETAILED_WIDTH = 896
 DETAILED_HEIGHT = 1152
-GENERATION_LIMIT = 5
-GENERATION_WINDOW_SECONDS = 60 * 60
-GENERATION_COOLDOWN_SECONDS = 10
-APP_VERSION = "2026.10.07"
-_GENERATION_LOCK = threading.Lock()
-_GENERATION_BY_USER: dict[str, list[float]] = {}
+APP_VERSION = "2026.10.07-2"
 
 EDITABLE_FIELDS = [
     "gender", "age", "height", "weight", "body_type", "nationality", "skin_tone",
@@ -454,14 +446,6 @@ def get_origin(features: dict) -> tuple[str, str]:
     return "국적 정보 없음", ""
 
 
-def get_known_appearance_count(features: dict) -> int:
-    return known_appearance_count(features)
-
-
-def get_missing_recommended(features: dict) -> list[str]:
-    return missing_recommended(features)
-
-
 def is_missing_alert(text: str) -> bool:
     """Conservative local check; the original message is never sent for this decision."""
     normalized = re.sub(r"\s+", " ", str(text or "")).strip()
@@ -488,9 +472,10 @@ def build_generation_prompt(
 ) -> str:
 
     features = sync_prompt_text_from_structured_features(dict(features))
-    description = features["image_prompt_en"]
-    if not description:
-        raise RuntimeError("이미지 생성에 필요한 인상착의 정보가 없습니다.")
+    description = features["image_prompt_en"] or (
+        "appearance details unspecified; a neutral anonymous person in plain, unbranded, "
+        "contemporary everyday clothing, with no distinctive face or accessories"
+    )
     nationality = str(features.get("nationality", "") or "").strip()
     nationality_en = {
         "대한민국": "Korean", "한국": "Korean", "한국인": "Korean",
@@ -1055,33 +1040,6 @@ def show_admin_analytics() -> None:
     st.caption("익명 브라우저 기준이며 실제 사람 수와 다릅니다. 재방문 날짜는 한국 시간 기준입니다. 원문·이미지·이름·위치는 통계 DB에 저장하지 않습니다.")
 
 
-def generation_limit_message(now: float | None = None) -> str:
-    now = now or time.time()
-    user_id = get_anonymous_user_id()
-    with _GENERATION_LOCK:
-        for key in list(_GENERATION_BY_USER):
-            recent = [t for t in _GENERATION_BY_USER[key] if now - t < GENERATION_WINDOW_SECONDS]
-            if recent:
-                _GENERATION_BY_USER[key] = recent
-            else:
-                del _GENERATION_BY_USER[key]
-        recent = _GENERATION_BY_USER.get(user_id, [])
-    if recent and now - recent[-1] < GENERATION_COOLDOWN_SECONDS:
-        wait = max(1, int(GENERATION_COOLDOWN_SECONDS - (now - recent[-1])))
-        return f"연속 요청을 막기 위해 {wait}초 뒤 다시 시도해 주세요."
-    if len(recent) >= GENERATION_LIMIT:
-        return "한 시간에 최대 5회까지 생성할 수 있습니다. 잠시 뒤 다시 시도해 주세요."
-    return ""
-
-
-def record_generation_attempt(now: float | None = None) -> None:
-    timestamp = now or time.time()
-    user_id = get_anonymous_user_id()
-    with _GENERATION_LOCK:
-        recent = [t for t in _GENERATION_BY_USER.get(user_id, [])
-                  if timestamp - t < GENERATION_WINDOW_SECONDS]
-        recent.append(timestamp)
-        _GENERATION_BY_USER[user_id] = recent[:GENERATION_LIMIT]
 def generate_reference_result(features: dict, message: str, mode: str) -> dict:
     started_at = time.perf_counter()
     best = None
@@ -1185,49 +1143,16 @@ st.warning(
     "재난문자에 적힌 인상착의를 이해하기 위한 참고 자료입니다."
 )
 
-with st.expander("📲 휴대전화 문자 연계 사용법", expanded=False):
-    st.markdown(
-        "1. 휴대전화 브라우저에서 이 사이트를 **홈 화면에 추가**합니다.\n"
-        "2. 실종 재난문자를 길게 눌러 **복사**합니다.\n"
-        "3. FindVision 바로가기를 열어 원문을 붙여 넣고 분석·생성을 누릅니다.\n"
-        "4. 생성이 끝나면 문자 원문과 참고 이미지가 알림 형태의 팝업으로 열립니다."
-    )
-    st.info(
-        "문자 도착만으로 자동 실행하려면 Android 보조 앱의 알림 접근 권한이 필요합니다. "
-        "현재 웹 버전은 문자 내용을 서버에 자동 수집하지 않는 복사·붙여넣기 방식입니다."
-    )
-
+st.caption("이 웹사이트는 기기의 SMS를 직접 읽지 않습니다. 자동 감지에는 Android 보조 앱과 알림 접근 권한이 필요합니다.")
 
 if analytics_enabled():
     with st.expander("🔒 팀 관리자용 사용 통계", expanded=False):
         show_admin_analytics()
 
-with st.expander("📌 권장 상세 재난문자 기준", expanded=True):
-    st.markdown(
-        """
-가능하면 다음 정보를 포함해 주세요.
-
-- 성별 / 나이 / 키 / 몸무게
-- 체형(비만 / 저체중 / 통통한 편 / 마른 편 등)
-- 피부톤
-- 머리색 / 머리 길이 / 곱슬·직모 등 머리 형태
-- 상의 색상과 종류
-- 외투·겉옷 색상과 종류
-- 하의 색상과 종류
-- 신발 색상과 종류
-- 모자 색상과 정확한 종류
-- 브랜드나 머리 스타일(실제 문자에 적힌 경우만)
-- 마지막 목격 위치와 재난문자 발송 지역
-- 안경 / 수염 / 소지품 등 기타 특징
-
-**없는 정보는 AI가 임의로 사실처럼 확정하지 않습니다.**
-        """
-    )
-
 message = st.text_area(
     "실종 재난문자 원문 — 그대로 붙여 넣기", value="",
     placeholder="받은 실종 재난문자 원문을 수정하지 않고 붙여 넣으세요.",
-    height=170, max_chars=1500,
+    height=170,
 )
 if message.strip():
     if is_missing_alert(message):
@@ -1259,7 +1184,7 @@ if st.button("1단계: AI 인상착의 분석", type="primary", use_container_wi
 
 features = st.session_state.get("last_analysis")
 edited_features = None
-mode = "빠른 생성"
+mode = "정밀 생성"
 generate_clicked = False
 if features:
     st.subheader("1. AI 분석 완료")
@@ -1287,7 +1212,8 @@ if features:
 
     mode = st.radio(
         "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
-        help="빠른 생성은 작은 이미지 1회를 바로 표시하고, 정밀 생성은 검수하면서 큰 이미지로 최대 3회 생성합니다.",
+        index=1,
+        help="정밀 생성은 Vision AI로 인상착의를 검수하고 필요한 경우 수정 생성합니다.",
     )
     source_changed = message.strip() != st.session_state.get("analysis_message", "")
     if source_changed:
@@ -1299,30 +1225,23 @@ if features:
 
 run_requested = generate_clicked or st.session_state.pop("regenerate_requested", False)
 if run_requested and edited_features:
-    limit_message = generation_limit_message()
-    if limit_message:
-        st.warning(limit_message)
-    elif not any(key != "nationality" for key in visual_facts(edited_features)):
-        st.warning("생성할 인물 정보가 없습니다. 재난문자에서 성별·나이·옷차림 등 한 가지 이상을 확인해 주세요.")
-    else:
-        try:
-            record_generation_attempt()
-            result = generate_reference_result(edited_features, message.strip(), mode)
-            st.session_state["last_result"] = result
-            st.session_state["last_analysis"] = edited_features
-            st.session_state.pop("generation_error", None)
-            usage_metric.metric("이 브라우저의 사이트 방문 횟수", f"{record_site_visit()}회")
-            verdict = result["best"]["verification"]
-            result["analytics_saved"] = log_analytics_event(
-                get_anonymous_user_id(), "image_generated",
-                verification_pass=verdict["pass"] if verdict["available"] else None,
-                verification_score=verdict["score"] if verdict["available"] else None,
-                attempts=result["attempts"], event_id=result["event_id"], mode=mode,
-                first_image_seconds=result["first_image_seconds"], total_seconds=result["total_seconds"])
-        except Exception as exc:
-            error = str(exc)
-            st.session_state["generation_error"] = (error if "안전 검사" in error else
-                "생성을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.")
+    try:
+        result = generate_reference_result(edited_features, message.strip(), mode)
+        st.session_state["last_result"] = result
+        st.session_state["last_analysis"] = edited_features
+        st.session_state.pop("generation_error", None)
+        usage_metric.metric("이 브라우저의 사이트 방문 횟수", f"{record_site_visit()}회")
+        verdict = result["best"]["verification"]
+        result["analytics_saved"] = log_analytics_event(
+            get_anonymous_user_id(), "image_generated",
+            verification_pass=verdict["pass"] if verdict["available"] else None,
+            verification_score=verdict["score"] if verdict["available"] else None,
+            attempts=result["attempts"], event_id=result["event_id"], mode=mode,
+            first_image_seconds=result["first_image_seconds"], total_seconds=result["total_seconds"])
+    except Exception as exc:
+        error = str(exc)
+        st.session_state["generation_error"] = (error if "안전 검사" in error else
+            "생성을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.")
 
 if st.session_state.get("generation_error"):
     st.error(st.session_state["generation_error"])
