@@ -1,4 +1,5 @@
 import base64
+import io
 import hmac
 import json
 import os
@@ -10,6 +11,7 @@ from typing import Any
 
 import requests
 import streamlit as st
+from PIL import Image, ImageDraw
 from streamlit_cookies_controller import CookieController
 
 from preview_logic import (
@@ -268,25 +270,39 @@ verification_requirements_en 규칙:
 - 위치·이름은 이미지 검수 조건에 넣지 않는다.
 """.strip()
 
-    result = cloudflare_json_request(
-        TEXT_MODEL,
-        {
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": analysis_message(original),
+    try:
+        result = cloudflare_json_request(
+            TEXT_MODEL,
+            {
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": analysis_message(original)},
+                ],
+                "temperature": 0.0,
+                "max_tokens": 1800,
+                "stream": False,
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": schema,
                 },
-            ],
-            "temperature": 0.0,
-            "max_tokens": 1800,
-            "stream": False,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": schema,
             },
-        },
-    )
+        )
+    except Exception as exc:
+        # Provider throttling (HTTP 429) can prevent analysis from starting.
+        # Extract only explicit source facts so the user still receives a result.
+        features = enhance_features_from_text({key: "" for key in FIELDS}, original, "")
+        age = re.search(r"(\d{1,3}\s*세|\d{1,2}\s*대)", original)
+        gender = re.search(r"남성|남자|여성|여자", original)
+        height = re.search(r"(?:키\s*)?(\d{2,3})\s*cm\b", original, re.I)
+        weight = re.search(r"(?:몸무게\s*)?(\d{2,3})\s*kg\b", original, re.I)
+        features["age"] = age.group(1).replace(" ", "") if age else ""
+        features["gender"] = ("남성" if gender and gender.group(0) in {"남성", "남자"}
+                              else "여성" if gender else "")
+        features["height"] = f"{height.group(1)}cm" if height else ""
+        features["weight"] = f"{weight.group(1)}kg" if weight else ""
+        features["_analysis_fallback_used"] = True
+        features["_analysis_provider_error"] = re.search(r"HTTP \d{3}", str(exc)).group(0) if re.search(r"HTTP \d{3}", str(exc)) else "AI 연결 실패"
+        return sync_prompt_text_from_structured_features(features)
 
     parsed = result.get("response", result) if isinstance(result, dict) else result
 
@@ -931,6 +947,77 @@ def record_generation_attempt(now: float | None = None) -> None:
     st.session_state.setdefault("generation_timestamps", []).append(now or time.time())
 
 
+def render_offline_reference_image(features: dict, width: int, height: int) -> bytes:
+    """Draw a clearly labeled, fast reference illustration when image AI is unavailable."""
+    width, height = max(384, min(int(width), 896)), max(576, min(int(height), 1152))
+    image = Image.new("RGB", (width, height), (246, 248, 251))
+    draw = ImageDraw.Draw(image)
+    sx, sy = width / 512, height / 768
+
+    def p(x, y):
+        return (round(x * sx), round(y * sy))
+
+    def box(x1, y1, x2, y2):
+        return tuple(round(v) for v in (x1 * sx, y1 * sy, x2 * sx, y2 * sy))
+
+    palette = {
+        "검은": (38, 42, 52), "검정": (38, 42, 52), "흰": (238, 239, 235),
+        "하얀": (238, 239, 235), "회색": (132, 142, 153), "빨간": (194, 65, 64),
+        "파란": (58, 112, 180), "남색": (45, 62, 99), "초록": (65, 126, 91),
+        "노란": (220, 177, 64), "베이지": (204, 184, 151), "갈색": (119, 81, 62),
+    }
+
+    def color(key, default):
+        value = str(features.get(key, "") or "")
+        return next((rgb for word, rgb in palette.items() if word in value), default)
+
+    skin = (225, 184, 150)
+    shirt = color("top", (112, 132, 154))
+    jacket = color("outerwear", (68, 82, 104))
+    pants = color("bottom", (58, 69, 86))
+    shoes = color("shoes", (238, 239, 235))
+    hair = color("hair_color", (48, 43, 40))
+    outline = (57, 65, 77)
+    line = max(2, round(3 * sx))
+    draw.rounded_rectangle(box(65, 35, 447, 730), radius=round(30*sx),
+                           fill="white", outline=(232, 235, 240), width=line)
+    draw.ellipse(box(154, 692, 358, 718), fill=(226, 230, 236))
+    draw.polygon([p(188,454), p(257,454), p(254,643), p(242,671), p(177,642)],
+                 fill=pants, outline=outline)
+    draw.polygon([p(256,454), p(326,454), p(321,642), p(301,671), p(250,643)],
+                 fill=pants, outline=outline)
+    for coords in ((178,657,254,684), (253,657,332,684)):
+        draw.rounded_rectangle(box(*coords), radius=round(10*sx), fill=shoes,
+                               outline=outline, width=line)
+    draw.rounded_rectangle(box(232,184,280,241), radius=round(10*sx), fill=skin)
+    draw.ellipse(box(202,94,310,220), fill=skin, outline=outline, width=line)
+    draw.ellipse(box(192,82,310,167), fill=hair, outline=outline, width=line)
+    draw.rectangle(box(196,128,204,163), fill=hair)
+    draw.rectangle(box(308,128,316,163), fill=hair)
+    draw.polygon([p(224,232),p(240,224),p(272,224),p(288,232),p(303,254),p(287,278),
+                  p(281,450),p(231,450),p(225,278),p(209,254)], fill=shirt, outline=outline)
+    draw.polygon([p(222,237),p(207,255),p(215,281),p(224,277),p(220,397),p(211,414),
+                  p(196,407),p(194,273)], fill=skin, outline=outline)
+    draw.polygon([p(290,237),p(305,255),p(297,281),p(288,277),p(292,397),p(301,414),
+                  p(316,407),p(318,273)], fill=skin, outline=outline)
+    if str(features.get("outerwear", "") or "").strip():
+        draw.polygon([p(224,232),p(250,242),p(250,448),p(231,448),p(224,276),p(213,258)],
+                     fill=jacket, outline=outline)
+        draw.polygon([p(288,232),p(262,242),p(262,448),p(281,448),p(288,276),p(299,258)],
+                     fill=jacket, outline=outline)
+    if "후드" in str(features.get("top", "")) + str(features.get("outerwear", "")):
+        draw.arc(box(213,220,299,291), start=180, end=360, fill=outline, width=line)
+    if str(features.get("hat_type", "") or "").strip():
+        draw.pieslice(box(198,82,314,151), start=180, end=360,
+                      fill=color("hat_type", (50,57,67)), outline=outline, width=line)
+    if any(word in str(features.get("accessories", "")) for word in ("가방","백팩","배낭")):
+        draw.rounded_rectangle(box(322,327,374,424), radius=round(12*sx),
+                               fill=(147,115,82), outline=outline, width=line)
+    output = io.BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
 def generate_reference_result(features: dict, message: str, mode: str) -> dict:
     started_at = time.perf_counter()
     best = None
@@ -948,9 +1035,17 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
         prompt = build_generation_prompt(features, "", correction)
         try:
             image_bytes, image_b64, mime_type = generate_image(prompt, width, height)
-        except Exception:
+        except Exception as exc:
             if best is None:
-                raise
+                image_bytes = render_offline_reference_image(features, width, height)
+                verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
+                           "feedback_en": "", "available": False, "skipped": True}
+                attempts_completed += 1
+                first_image_seconds = time.perf_counter() - started_at
+                best = {"attempt": attempt, "image": image_bytes, "mime_type": "image/png",
+                        "verification": verdict, "offline_fallback": True,
+                        "provider_error": str(exc)[:180]}
+                break
             interrupted = True
             break
         attempts_completed += 1
@@ -1083,6 +1178,9 @@ if features:
         and key not in {"last_seen_location", "alert_area"}
     ]
     st.success(f"재난문자에서 이미지 생성에 사용할 특징 {len(confirmed)}개를 확인했습니다.")
+    if features.get("_analysis_fallback_used"):
+        reason = features.get("_analysis_provider_error", "")
+        st.warning(f"AI 분석 제공자가 {reason}로 응답하지 않아 원문에 적힌 정보만 추출했습니다.")
     if confirmed:
         with st.expander("확인된 정보 보기", expanded=False):
             for label, value in confirmed:
@@ -1144,6 +1242,8 @@ if result:
                f"{result['width']}×{result['height']}px · 총 {result['attempts']}회 생성")
     st.caption("각 요청에서 측정한 시간입니다. 속도·인상착의 정확도를 보장하지 않습니다.")
     st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
+    if best.get("offline_fallback"):
+        st.warning("이미지 AI 제공자가 응답하지 않아 의상과 색상을 반영한 참고 그림을 표시했습니다. 사진 생성 결과가 아닙니다.")
     if verdict.get("skipped"):
         st.info("빠른 생성은 속도를 위해 자동 검수를 생략했습니다. 결과를 직접 확인해 주세요.")
     elif not verdict["available"]:
