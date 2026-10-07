@@ -46,7 +46,7 @@ FAST_WIDTH = 512
 FAST_HEIGHT = 768
 DETAILED_WIDTH = 896
 DETAILED_HEIGHT = 1152
-APP_VERSION = "2026.10.07-2"
+APP_VERSION = "2026.10.07-3"
 
 EDITABLE_FIELDS = [
     "gender", "age", "height", "weight", "body_type", "nationality", "skin_tone",
@@ -232,6 +232,7 @@ def extract_features(original: str) -> dict:
 - 없는 정보는 빈 문자열("")로 둔다.
 - 모호한 정보를 추측하지 않는다.
 - 이름만 보고 국적, 피부톤, 머리 특징을 추측하지 않는다.
+- 한국인이 기본값이다. 외국 국적/외국인임이 원문에 명시된 경우만 nationality에 적고, 이름·장소·외모로 외국인 여부를 추정하지 않는다.
 - 옷·모자·신발 브랜드, 머리 스타일은 명시된 경우에만 기입한다. 없으면 빈 문자열로 둔다.
 - last_seen_location은 마지막 목격 장소, alert_area는 재난문자 발송 지역이다. 장소를 외형으로 해석하지 않는다.
 
@@ -248,13 +249,18 @@ def extract_features(original: str) -> dict:
    예: "흰색 텀블러, 분홍색 뚜껑, 빨대, 여러 색상의 가방 끈".
 10. 지팡이는 신발이 아니라 accessories에 적고, 손 위치와 색상이 있으면 그대로 보존한다.
 11. 고무신은 shoes에 적는다. 운동화·슬리퍼·구두로 바꾸지 않는다.
+12. 피부 표현은 말의 정도를 보존한다. "살짝 탐/약간 그을림"은 약한 태닝, "구릿빛/까무잡잡"은 따뜻한 갈색, "검은 편/어두운 편"은 짙은 갈색 피부톤으로 구분하며 피부를 순수한 검정색으로 해석하지 않는다.
+13. "맨발"은 shoes="맨발"로 적고 양말·신발 없음도 함께 명확히 한다.
+14. "목발 사용/목발 짚고"는 accessories에 목발로 적는다. 지팡이와 혼동하지 않는다.
+15. "옷 없음/의복 미착용/나체/알몸"이 명시되면 special_features="의복 미착용"으로 보존한다. 성인임이 확인되지 않은 사람의 나체 이미지를 생성하지 않는다.
 
 image_prompt_en 규칙:
 - 반드시 자연스럽고 정확한 영어로 작성한다.
 - 원문에 있는 사실만 포함한다.
 - 현대의 일상복 기준으로 표현한다.
 - 실제 얼굴 생김새를 창작하지 않는다.
-- 국적이 없는 경우 특정 국적을 추가하지 않는다.
+- 국적은 명시된 경우에만 적용한다. 국적이 없거나 특정되지 않으면 기본 인물은 한국인으로 설정하되, 피부톤·머리색은 별도 근거 없이는 추정하지 않는다.
+- 피부톤은 명시된 강도를 그대로 지킨다. 살짝 탄 피부는 은은한 태닝으로 표현하고, 어떤 어두운 표현도 순수한 검정색 피부로 바꾸지 않는다.
 - 겉옷은 상의 위에 겹쳐 입는 레이어로 명확하게 기술한다.
 - 브랜드 이름은 명시된 경우 의류 디자인 설명에만 사용하고 로고·문자를 생성하라고 요구하지 않는다.
 
@@ -315,13 +321,23 @@ def phrase_to_prompt_en(value: str) -> str:
         ("장발", "long hair"), ("긴머리", "long hair"), ("포니테일", "ponytail"),
         ("묶은머리", "tied-back hair"), ("땋은머리", "braided hair"),
         ("파마머리", "permed hair"), ("파마", "permed hair"),
+        ("매우 어두운 피부톤", "very deep brown complexion, not pure black"),
+        ("짙은 갈색 피부톤", "deep brown complexion, not pure black"),
+        ("따뜻한 갈색 피부톤", "warm brown complexion"),
+        ("약간 그을린 피부톤", "slightly sun-tanned complexion with a subtle golden-brown tan"),
+        ("그을린 피부톤", "sun-tanned complexion"),
+        ("보통 피부톤", "medium natural complexion"),
+        ("밝은 피부톤", "light natural complexion"),
         ("고도 비만", "very heavy build"), ("고도비만", "very heavy build"),
         ("보통 체형", "average build"), ("남성", "male"), ("여성", "female"),
         ("청바지", "jeans"), ("초록색", "green"), ("노란색", "yellow"),
         ("베이지색", "beige"), ("갈색", "brown"), ("분홍색", "pink"),
         ("보라색", "purple"), ("주황색", "orange"),
         ("후드집업", "zip-up hoodie"), ("후드 티셔츠", "hoodie"), ("후드 티", "hoodie"),
-        ("후드티", "hoodie"), ("후드", "hoodie"), ("맨투맨", "sweatshirt"),
+        ("후드티", "hoodie"), ("후드", "hoodie"),
+        ("양쪽 목발", "a pair of forearm crutches"), ("목발", "forearm crutches"),
+        ("맨발", "barefoot, with no shoes or socks"),
+        ("의복 미착용", "explicitly no clothing"), ("맨투맨", "sweatshirt"),
         ("티셔츠", "T-shirt"), ("블라우스", "blouse"), ("셔츠", "shirt"),
         ("니트", "knit sweater"),
         ("학교", "school uniform"),
@@ -480,13 +496,26 @@ def build_generation_prompt(
     nationality_en = {
         "대한민국": "Korean", "한국": "Korean", "한국인": "Korean",
         "미국": "American", "미국인": "American", "일본": "Japanese", "일본인": "Japanese",
-        "중국": "Chinese", "중국인": "Chinese",
+        "중국": "Chinese", "중국인": "Chinese", "캐나다": "Canadian", "영국": "British",
+        "프랑스": "French", "독일": "German", "러시아": "Russian", "호주": "Australian",
+        "뉴질랜드": "New Zealander", "베트남": "Vietnamese", "태국": "Thai",
+        "필리핀": "Filipino", "인도": "Indian", "이탈리아": "Italian", "스페인": "Spanish",
     }.get(nationality, nationality or "Korean")
-    origin_instruction = (
-        f"Depict the fictional person as {nationality_en}. "
-        if nationality else
-        "No nationality was stated; use the service default and depict the fictional person as Korean. "
-    )
+    if nationality == "외국인(국적 미상)":
+        origin_instruction = (
+            "The source explicitly says this person is a foreign national, but gives no country or ethnicity. "
+            "Do not infer or stereotype nationality, ethnicity, or skin tone. "
+        )
+    elif nationality:
+        origin_instruction = (
+            f"Depict the fictional person as {nationality_en}, because this nationality is explicitly stated. "
+            "Do not infer skin tone from nationality. "
+        )
+    else:
+        origin_instruction = (
+            "Use the service default: depict a fictional Korean person. "
+            "Do not infer nationality from name or location; do not invent distinctive skin or hair traits. "
+        )
     layers = ("Wear the stated outerwear over the inner top. A closed outer layer may hide the top."
               if features.get("outerwear") else "No outerwear is specified; do not add a coat or jacket.")
     haircut = (
@@ -503,6 +532,41 @@ def build_generation_prompt(
     raw_age = str(features.get("age", "") or "").strip()
     exact_age = re.search(r"(\d{1,3})\s*세", raw_age)
     age_decade = re.search(r"(\d{2})\s*대", raw_age)
+    special_text = str(features.get("special_features", "") or "")
+    no_clothes = "의복 미착용" in special_text
+    age_confirms_adult = bool(
+        (exact_age and int(exact_age.group(1)) >= 18)
+        or (age_decade and int(age_decade.group(1)) >= 20)
+        or re.search(r"성인", raw_age)
+    )
+    if no_clothes and not age_confirms_adult:
+        raise RuntimeError(
+            "옷을 입지 않은 이미지 요청은 대상이 성인으로 확인될 때만 생성할 수 있습니다."
+        )
+    clothing_instruction = (
+        "Depict the explicitly stated adult nudity in a neutral, non-sexual, non-erotic documentary manner. "
+        "No sexual pose, emphasis, or activity. "
+        if no_clothes else "Use contemporary everyday clothing only as explicitly described. "
+    )
+    skin_value = str(features.get("skin_tone", "") or "").strip()
+    skin_instruction = (
+        "Match the explicitly stated skin tone and its intensity precisely. A slight tan is subtle golden-brown; "
+        "dark or brown skin is a natural brown complexion, never painted pure black. "
+        if skin_value else
+        ("Do not infer skin tone from nationality." if nationality else
+         "Use a natural medium Korean complexion when skin tone is unspecified; avoid extreme pale or dark defaults.")
+    )
+    shoes_value = str(features.get("shoes", "") or "")
+    barefoot = "맨발" in shoes_value
+    barefoot_instruction = (
+        "The person is barefoot: both bare feet visible, with no shoes and no socks. "
+        if barefoot else ""
+    )
+    accessory_value = str(features.get("accessories", "") or "")
+    crutches_instruction = (
+        "The person uses the explicitly stated forearm crutches for support. Show the crutch(es) clearly in the correct number; do not substitute a cane or walking stick. "
+        if "목발" in accessory_value else ""
+    )
     if exact_age:
         age_instruction = (
             f"Depict a person of the stated chronological age, {exact_age.group(1)} years. "
@@ -530,12 +594,12 @@ def build_generation_prompt(
         "Create one photorealistic full-body appearance reference of a fictional person. "
         "This is an illustration of described clothing and build, not an identified person's face. "
         "Exactly one person, standing naturally in a straight front view. Keep the entire head, both "
-        "hands, every carried item, legs and both shoes fully inside the frame with comfortable margins. "
+        "hands, every carried item, legs and both feet fully inside the frame with comfortable margins. "
         "Use realistic anatomy, natural proportions, sharp fabric texture, neutral documentary lighting, "
-        "high detail, plain light studio background and contemporary clothing. "
-        + origin_instruction +
+        "high detail, plain light studio background. "
+        + clothing_instruction + origin_instruction + skin_instruction +
         "Match only the stated appearance facts; unspecified details are illustrative. "
-        + age_instruction +
+        + age_instruction + barefoot_instruction + crutches_instruction +
         "No extra person, extra limb, duplicate item, unlisted possession, text, letters, logos, watermark or decorative props. "
         + layers + " " + button_state + haircut + possessions + "\n" + description
     )
@@ -640,6 +704,23 @@ def verify_image(image_b64: str, mime_type: str, features: dict) -> dict:
     requirements = features.get("verification_requirements_en", "").strip()
     structured_facts = json.dumps(visual_facts(features), ensure_ascii=False)
     has_outerwear = bool(str(features.get("outerwear", "") or "").strip())
+    shoes_value = str(features.get("shoes", "") or "")
+    is_barefoot = "맨발" in shoes_value
+    accessories_value = str(features.get("accessories", "") or "")
+    uses_crutches = "목발" in accessories_value
+    is_explicitly_nude = "의복 미착용" in str(features.get("special_features", "") or "")
+    barefoot_check = (
+        "The person must have visible bare feet, with no shoes or socks."
+        if is_barefoot else "Evaluate the stated footwear normally."
+    )
+    crutches_check = (
+        "The stated forearm crutch(es) must be visible and used for support; do not substitute a cane."
+        if uses_crutches else "No mobility aid is specified."
+    )
+    clothing_state_check = (
+        "The source explicitly states adult non-sexual nudity; do not add clothing and do not sexualize the pose."
+        if is_explicitly_nude else "Follow the stated clothing."
+    )
     outerwear_check = (
         "The stated outerwear must be visibly worn over the inner top, not omitted or merged into it.\n"
         "If outerwear is closed, do not demand that its covered inner top be fully visible."
@@ -674,6 +755,9 @@ USER-SUPPLIED STRUCTURED APPEARANCE FACTS (source of truth):
 
 {outerwear_check}
 {age_check}
+{barefoot_check}
+{crutches_check}
+{clothing_state_check}
 {unlisted_items_check}
 Never verify a brand by assuming a logo must appear.
 Name and location are context, not visual appearance requirements.
@@ -686,6 +770,9 @@ Reject the image if:
 - any required clothing type is wrong
 {outerwear_rejection}
 - required shoes are wrong
+- footwear or socks appear when the subject is explicitly barefoot
+- required crutches are missing, wrong in number, or replaced by a cane
+- stated clothing status is wrong
 - required hat type/color is wrong
 - any stated possession/accessory is missing, duplicated, wrong in color/shape, or placed on the wrong hand/body area
 - any unlisted bag, accessory, jewelry item, or carried object appears
@@ -1240,7 +1327,7 @@ if run_requested and edited_features:
             first_image_seconds=result["first_image_seconds"], total_seconds=result["total_seconds"])
     except Exception as exc:
         error = str(exc)
-        st.session_state["generation_error"] = (error if "안전 검사" in error else
+        st.session_state["generation_error"] = (error if any(term in error for term in ("안전 검사", "성인이 확인될 때만")) else
             "생성을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.")
 
 if st.session_state.get("generation_error"):
