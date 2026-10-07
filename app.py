@@ -571,6 +571,19 @@ def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, st
         result = cloudflare_multipart_request(model, fields)
     except RuntimeError as primary_error:
         primary_message = str(primary_error)
+        # A daily account allocation is shared by all models. Retrying another
+        # Cloudflare model cannot restore exhausted neurons and only adds delay.
+        daily_quota_exhausted = (
+            "10,000" in primary_message
+            and re.search(r"neuron|뉴런|daily free allocation|일일 무료 할당량", primary_message, re.I)
+        )
+        if daily_quota_exhausted:
+            raise RuntimeError(
+                "Cloudflare 무료 이미지 생성량(하루 10,000 뉴런)을 모두 사용했습니다. "
+                "같은 계정의 다른 이미지 모델도 같은 할당량을 사용하므로 지금 재시도해도 생성되지 않습니다. "
+                "무료 할당량은 매일 00:00 UTC(한국 시간 오전 9시)에 초기화됩니다. "
+                "그때 다시 시도하거나 Cloudflare Workers 유료 요금제를 설정해 주세요."
+            ) from primary_error
         if not re.search(r"HTTP 429|오류 코드 (?:4006|3040)", primary_message):
             raise
         photo_fields = {
@@ -1170,6 +1183,7 @@ run_requested = generate_clicked or st.session_state.pop("regenerate_requested",
 if run_requested and edited_features:
     # Never keep an older image visible when a new generation request fails.
     st.session_state.pop("last_result", None)
+    st.session_state.pop("generation_error", None)
     limit_message = generation_limit_message()
     if limit_message:
         st.warning(limit_message)
@@ -1200,6 +1214,9 @@ if run_requested and edited_features:
 
 if st.session_state.get("generation_error"):
     st.error(st.session_state["generation_error"])
+    if edited_features and st.button("다시 생성하기", type="primary", use_container_width=True):
+        st.session_state["regenerate_requested"] = True
+        st.rerun()
 
 result = st.session_state.get("last_result")
 if result:
@@ -1251,3 +1268,4 @@ if result:
     if st.button("다시 생성하기", type="primary", use_container_width=True):
         st.session_state["regenerate_requested"] = True
         st.rerun()
+
