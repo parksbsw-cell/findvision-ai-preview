@@ -3,6 +3,8 @@ import hmac
 import json
 import os
 import re
+import sqlite3
+import tempfile
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -52,6 +54,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
+LOCAL_ANALYTICS_DB = os.path.join(tempfile.gettempdir(), "findvision_ai_visits.sqlite3")
 
 EDITABLE_FIELDS = [
     "gender", "age", "height", "weight", "body_type", "nationality", "skin_tone",
@@ -847,7 +850,7 @@ def record_public_visit() -> None:
     # This otherwise-impossible combination is reserved for anonymous visits,
     # so the existing production schema can record visits without storing any
     # message, name, location, image, or IP address.
-    if log_analytics_event(
+    saved = log_analytics_event(
         get_anonymous_user_id(),
         "image_generated",
         event_id=str(uuid.uuid4()),
@@ -857,8 +860,47 @@ def record_public_visit() -> None:
         mode="빠른 생성",
         first_image_seconds=0,
         total_seconds=0,
-    ):
+    )
+    if not saved:
+        saved = record_local_visit(get_anonymous_user_id())
+    if saved:
         st.session_state["public_visit_recorded"] = True
+
+
+def local_analytics_connection():
+    connection = sqlite3.connect(LOCAL_ANALYTICS_DB, timeout=10)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS public_visits (
+        event_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+        )"""
+    )
+    return connection
+
+
+def record_local_visit(user_id: str) -> bool:
+    try:
+        with local_analytics_connection() as connection:
+            connection.execute(
+                "INSERT INTO public_visits(event_id, user_id, created_at) VALUES (?, ?, ?)",
+                (str(uuid.uuid4()), user_id, datetime.now(timezone.utc).isoformat()),
+            )
+        return True
+    except sqlite3.Error:
+        return False
+
+
+def fetch_local_visits() -> list[dict]:
+    with local_analytics_connection() as connection:
+        rows = connection.execute(
+            "SELECT event_id, user_id, created_at FROM public_visits ORDER BY created_at"
+        ).fetchall()
+    return [
+        {"event_id": event_id, "user_id": user_id, "created_at": created_at}
+        for event_id, user_id, created_at in rows
+    ]
 
 
 def fetch_public_visits() -> list[dict]:
@@ -902,14 +944,11 @@ def calculate_visit_metrics(rows: list[dict]) -> dict:
 
 
 def show_public_retention_metrics() -> None:
-    if not analytics_enabled():
-        st.caption("방문 통계 연결을 준비하고 있습니다.")
-        return
     try:
-        metrics = calculate_visit_metrics(fetch_public_visits())
+        rows = fetch_public_visits() if analytics_enabled() else fetch_local_visits()
+        metrics = calculate_visit_metrics(rows)
     except Exception:
-        st.caption("방문 통계를 불러오는 중입니다.")
-        return
+        metrics = calculate_visit_metrics(fetch_local_visits())
     total_users = int(metrics.get("total_users", 0) or 0)
     total_visits = int(metrics.get("total_visits", 0) or 0)
     returning_users = int(metrics.get("returning_users", 0) or 0)
