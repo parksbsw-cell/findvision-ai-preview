@@ -55,7 +55,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
-LOCAL_ANALYTICS_DB = os.path.join(tempfile.gettempdir(), "findvision_ai_visits_v2.sqlite3")
+LOCAL_ANALYTICS_DB = os.path.join(tempfile.gettempdir(), "findvision_ai_visits_v3.sqlite3")
 
 EDITABLE_FIELDS = [
     "gender", "age", "height", "weight", "body_type", "nationality", "skin_tone",
@@ -797,12 +797,12 @@ def get_anonymous_user_id() -> str:
         # addresses are never stored.
         try:
             headers = st.context.headers
-            forwarded_for = str(headers.get("X-Forwarded-For", "")).split(",")[0].strip()
             fingerprint_parts = [
-                forwarded_for,
                 str(headers.get("User-Agent", "")),
                 str(headers.get("Accept-Language", "")),
                 str(headers.get("Sec-CH-UA-Platform", "")),
+                str(headers.get("Sec-CH-UA", "")),
+                str(headers.get("Accept", "")),
             ]
         except Exception:
             fingerprint_parts = []
