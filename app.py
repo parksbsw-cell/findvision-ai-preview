@@ -759,9 +759,8 @@ feedback_en must tell the image generator exactly what to correct.
 
 
 def analytics_enabled() -> bool:
-    # Explicit opt-in; the dedicated ClueSight table isolates legacy metrics.
-    return (get_secret("CLUESIGHT_ANALYTICS_ENABLED").lower() == "true"
-            and bool(get_secret("SUPABASE_URL")) and bool(supabase_key()))
+    # Analytics is active whenever the private production connection exists.
+    return bool(get_secret("SUPABASE_URL")) and bool(supabase_key())
 
 
 def supabase_key() -> str:
@@ -844,32 +843,83 @@ def record_public_visit() -> None:
     """Record one anonymous visit for the current browser session."""
     if st.session_state.get("public_visit_recorded"):
         return
+    # The deployed database originally allowed only image_generated rows.
+    # This otherwise-impossible combination is reserved for anonymous visits,
+    # so the existing production schema can record visits without storing any
+    # message, name, location, image, or IP address.
     if log_analytics_event(
         get_anonymous_user_id(),
-        "site_visit",
+        "image_generated",
         event_id=str(uuid.uuid4()),
+        verification_pass=False,
+        verification_score=0,
+        attempts=1,
+        mode="빠른 생성",
+        first_image_seconds=0,
+        total_seconds=0,
     ):
         st.session_state["public_visit_recorded"] = True
 
 
+def fetch_public_visits() -> list[dict]:
+    response = requests.get(
+        get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/cluesight_events",
+        headers=supabase_headers(),
+        params={
+            "select": "event_id,user_id,created_at",
+            "event_type": "eq.image_generated",
+            "verification_pass": "eq.false",
+            "verification_score": "eq.0",
+            "attempts": "eq.1",
+            "mode": "eq.빠른 생성",
+            "first_image_seconds": "eq.0",
+            "total_seconds": "eq.0",
+            "order": "created_at.asc",
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list):
+        raise ValueError("Invalid visit analytics response")
+    return rows
+
+
+def calculate_visit_metrics(rows: list[dict]) -> dict:
+    visit_counts: dict[str, int] = {}
+    for row in rows:
+        user_id = str(row.get("user_id") or "").strip()
+        if user_id:
+            visit_counts[user_id] = visit_counts.get(user_id, 0) + 1
+    total_users = len(visit_counts)
+    returning_users = sum(1 for count in visit_counts.values() if count >= 2)
+    return {
+        "total_users": total_users,
+        "total_visits": sum(visit_counts.values()),
+        "returning_users": returning_users,
+        "retention": 100.0 * returning_users / total_users if total_users else 0.0,
+    }
+
+
 def show_public_retention_metrics() -> None:
     if not analytics_enabled():
+        st.caption("방문 통계 연결을 준비하고 있습니다.")
         return
     try:
-        metrics = fetch_analytics_summary()
+        metrics = calculate_visit_metrics(fetch_public_visits())
     except Exception:
         st.caption("방문 통계를 불러오는 중입니다.")
         return
     total_users = int(metrics.get("total_users", 0) or 0)
     total_visits = int(metrics.get("total_visits", 0) or 0)
     returning_users = int(metrics.get("returning_users", 0) or 0)
-    retention = 100.0 * returning_users / total_users if total_users else 0.0
+    retention = float(metrics.get("retention", 0.0) or 0.0)
     first, second, third, fourth = st.columns(4)
     first.metric("누적 방문자", f"{total_users}명")
     second.metric("전체 방문 횟수", f"{total_visits}회")
     third.metric("재방문자", f"{returning_users}명")
     fourth.metric("리텐션", f"{retention:.1f}%")
-    st.caption("익명 브라우저 기준 · 서로 다른 한국 날짜의 재접속을 재방문으로 계산합니다.")
+    st.caption("익명 브라우저 기준 · 같은 브라우저의 두 번째 접속부터 재방문으로 계산합니다.")
 
 
 def parse_created_at(value: str):
