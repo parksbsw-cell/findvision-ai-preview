@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import hmac
 import json
 import os
@@ -54,7 +55,7 @@ DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
-LOCAL_ANALYTICS_DB = os.path.join(tempfile.gettempdir(), "findvision_ai_visits.sqlite3")
+LOCAL_ANALYTICS_DB = os.path.join(tempfile.gettempdir(), "findvision_ai_visits_v2.sqlite3")
 
 EDITABLE_FIELDS = [
     "gender", "age", "height", "weight", "body_type", "nationality", "skin_tone",
@@ -790,9 +791,37 @@ def get_anonymous_user_id() -> str:
     if saved:
         user_id = str(saved)
     else:
-        user_id = str(uuid.uuid4())
+        # Some embedded browsers delay third-party cookie access. Use a
+        # one-way browser/network fingerprint as a stable fallback so refresh
+        # visits are not incorrectly counted as new people. Raw headers and IP
+        # addresses are never stored.
         try:
-            cookie_controller.set("findvision_uid", user_id, max_age=365 * 24 * 60 * 60)
+            headers = st.context.headers
+            forwarded_for = str(headers.get("X-Forwarded-For", "")).split(",")[0].strip()
+            fingerprint_parts = [
+                forwarded_for,
+                str(headers.get("User-Agent", "")),
+                str(headers.get("Accept-Language", "")),
+                str(headers.get("Sec-CH-UA-Platform", "")),
+            ]
+        except Exception:
+            fingerprint_parts = []
+        fingerprint = "|".join(fingerprint_parts)
+        if fingerprint.strip("|"):
+            digest = hashlib.sha256(
+                ("findvision-public-visitor-v1|" + fingerprint).encode("utf-8")
+            ).hexdigest()
+            user_id = str(uuid.UUID(digest[:32]))
+        else:
+            user_id = str(uuid.uuid4())
+        try:
+            cookie_controller.set(
+                "findvision_uid",
+                user_id,
+                max_age=365 * 24 * 60 * 60,
+                secure=True,
+                same_site="lax",
+            )
         except Exception:
             pass
 
