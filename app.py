@@ -43,7 +43,7 @@ DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
 PHOTO_REALISM_FALLBACK_MODEL = "@cf/black-forest-labs/flux-2-dev"
 VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 1
 FAST_ATTEMPTS = 1
 FAST_WIDTH = 512
 FAST_HEIGHT = 768
@@ -840,6 +840,38 @@ def fetch_analytics_summary() -> dict:
     return result
 
 
+def record_public_visit() -> None:
+    """Record one anonymous visit for the current browser session."""
+    if st.session_state.get("public_visit_recorded"):
+        return
+    if log_analytics_event(
+        get_anonymous_user_id(),
+        "site_visit",
+        event_id=str(uuid.uuid4()),
+    ):
+        st.session_state["public_visit_recorded"] = True
+
+
+def show_public_retention_metrics() -> None:
+    if not analytics_enabled():
+        return
+    try:
+        metrics = fetch_analytics_summary()
+    except Exception:
+        st.caption("방문 통계를 불러오는 중입니다.")
+        return
+    total_users = int(metrics.get("total_users", 0) or 0)
+    total_visits = int(metrics.get("total_visits", 0) or 0)
+    returning_users = int(metrics.get("returning_users", 0) or 0)
+    retention = 100.0 * returning_users / total_users if total_users else 0.0
+    first, second, third, fourth = st.columns(4)
+    first.metric("누적 방문자", f"{total_users}명")
+    second.metric("전체 방문 횟수", f"{total_visits}회")
+    third.metric("재방문자", f"{returning_users}명")
+    fourth.metric("리텐션", f"{retention:.1f}%")
+    st.caption("익명 브라우저 기준 · 서로 다른 한국 날짜의 재접속을 재방문으로 계산합니다.")
+
+
 def parse_created_at(value: str):
     if not value:
         return None
@@ -1080,6 +1112,8 @@ if missing_cloudflare_settings:
 usage_metric = st.empty()
 usage_metric.metric("내가 이미지 생성에 사용한 횟수", f"{get_my_usage_count()}회")
 st.caption("이 브라우저에 저장된 완료 횟수입니다. 다른 기기에서는 별도로 계산됩니다.")
+record_public_visit()
+show_public_retention_metrics()
 
 st.caption(
     "상세 실종 재난문자를 AI가 분석하고, 인상착의를 반영한 "
@@ -1169,7 +1203,7 @@ if features:
 
     mode = st.radio(
         "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
-        help="빠른 생성은 작은 이미지 1회를 바로 표시하고, 정밀 생성은 검수하면서 큰 이미지로 최대 3회 생성합니다.",
+        help="빠른 생성은 작은 이미지 1회를 바로 표시하고, 정밀 생성은 큰 이미지 1회를 생성한 뒤 Vision AI로 한 번 검수합니다.",
     )
     source_changed = message.strip() != st.session_state.get("analysis_message", "")
     if source_changed:
