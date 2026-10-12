@@ -44,9 +44,9 @@ HAIRSTYLES = (
     "묶은머리", "땋은머리", "곱슬머리", "파마머리", "파마",
 )
 CLOTHES = {
-    "top": r"반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|셔츠|니트|(?<!색)상의",
+    "top": r"원피스|반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|셔츠|니트|(?<!색)상의",
     "outerwear": r"후드\s*집업|바람막이|패딩|점퍼|자켓|재킷|코트|외투|겉옷|조끼|작업복",
-    "bottom": r"반바지|긴바지|청바지|슬랙스|치마|레깅스|트레이닝복\s*바지|츄리닝\s*바지|바지|하의",
+    "bottom": r"몸빼\s*바지|몸빼바지|반바지|긴바지|청바지|슬랙스|치마|레깅스|트레이닝복\s*바지|츄리닝\s*바지|바지|하의",
     "shoes": r"운동화|크록스|고무신|장화|로퍼|워커|슬리퍼|샌들|구두|단화|부츠|신발",
     "hat_type": r"등산모자|캡모자|야구모자|벙거지|버킷햇|비니|중절모|모자",
 }
@@ -105,7 +105,7 @@ def _color_in(value: str) -> str:
 def _extract_clothing(text: str, clothing_words: str) -> str:
     pattern = (
         rf"({COLORS})?\s*(?:(?:{'|'.join(re.escape(b) for b in BRANDS)})\s*)?"
-        rf"((?:(?:로고\s*(?:있는|없는)|무지|학교|얇은|두꺼운|긴팔|반팔|긴|짧은)\s*)*)"
+        rf"((?:(?:로고\s*(?:있는|없는)|무지|학교|얇은|두꺼운|꽃무늬|줄무늬|체크무늬|민소매|목폴라|긴팔|반팔|긴|짧은)\s*)*)"
         rf"({clothing_words})"
     )
     matches = list(re.finditer(pattern, text))
@@ -119,6 +119,12 @@ def _explicit_top_layers(text: str) -> tuple[str, str]:
     """Extract an inner top and an explicitly layered overshirt."""
     match = re.search(r"(?:안에|속에)\s*(.+?)\s*(?:를|을)?\s*(?:입고|입은|착용하고).*?"
                       r"(?:그\s*위에|위에는?)\s*(.+)", text)
+    if not match:
+        # 재난문자에는 조사 없이 "검은 반팔티 위에 흰 셔츠"처럼
+        # 압축해서 적는 경우가 많다. 두 옷 사이의 '위에'도 겹쳐 입기로 본다.
+        top = CLOTHES["top"]
+        garment = rf"(?:{COLORS})?\s*(?:(?:학교|얇은|두꺼운|꽃무늬|줄무늬|체크무늬|무지|긴팔|반팔)\s*)*(?:{top})"
+        match = re.search(rf"(?P<inner>{garment})\s*(?:을|를)?\s*(?:그\s*)?위에\s*(?P<outer>{garment})", text)
     if not match:
         return "", ""
     inner_text, outer_text = match.groups()
@@ -286,9 +292,24 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
     if re.search(r"단발(?:머리)?", text) and (overwrite or not _has_value(features, "hair_length")):
         features["hair_length"] = "턱선 길이"
     if overwrite or not _has_value(features, "body_type"):
-        match = re.search(r"(고도\s*비만|비만|저체중|통통한\s*편|마른\s*편|마름|뚱뚱한\s*편|건장한\s*편|보통\s*체형)", text)
+        match = re.search(
+            r"(고도\s*비만|비만(?:\s*체형)?|저체중(?:\s*체형)?|"
+            r"통통한(?:\s*편|\s*체형)?|마른(?:\s*편|\s*체형)?|마름|"
+            r"뚱뚱한(?:\s*편|\s*체형)?|건장한(?:\s*편|\s*체형)?|"
+            r"왜소한(?:\s*편|\s*체형)?|보통(?:\s*체형|\s*체격)|마른\s*체격|통통한\s*체격)",
+            text,
+        )
         if match:
-            features["body_type"] = {"마름": "마른 편"}.get(match.group(1), match.group(1))
+            value = re.sub(r"\s+", " ", match.group(1)).strip()
+            canonical = {
+                "마름": "마른 편", "마른": "마른 편", "마른 체형": "마른 편", "마른 체격": "마른 편",
+                "통통한": "통통한 편", "통통한 체형": "통통한 편", "통통한 체격": "통통한 편",
+                "뚱뚱한": "뚱뚱한 편", "뚱뚱한 체형": "뚱뚱한 편",
+                "건장한": "건장한 편", "건장한 체형": "건장한 편",
+                "왜소한": "왜소한 편", "왜소한 체형": "왜소한 편",
+                "보통 체격": "보통 체형", "비만 체형": "비만", "저체중 체형": "저체중",
+            }
+            features["body_type"] = canonical.get(value, value)
     for key in ("top", "outerwear", "bottom", "shoes"):
         found = _extract_clothing(text, CLOTHES[key])
         if not found:

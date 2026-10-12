@@ -36,3 +36,26 @@ def test_twenty_fictional_accuracy_examples(text, key, expected):
 
 def test_examples_are_exactly_twenty():
     assert len(EXAMPLES) == 20
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("남, 76세, 168cm, 마른 체형", "body_type", "마른 편"),
+        ("여성 9세 노란색 원피스 흰 운동화", "top", "원피스"),
+        ("여, 82세, 꽃무늬 긴팔 상의, 검은 몸빼바지", "top", "꽃무늬"),
+        ("여, 82세, 꽃무늬 긴팔 상의, 검은 몸빼바지", "bottom", "몸빼"),
+    ],
+)
+def test_compact_disaster_message_variants(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")
+
+
+def test_layered_tops_without_inner_word_are_kept_separate():
+    text = "검은색 얇은 반팔티 위에 흰색 학교 반팔 셔츠를 입고 모든 단추를 풀어 입음"
+    facts = enhance_features_from_text({}, text, "")
+    assert "검은색" in facts["top"]
+    assert "반팔" in facts["top"]
+    assert "흰색" in facts["outerwear"]
+    assert "학교" in facts["outerwear"]
