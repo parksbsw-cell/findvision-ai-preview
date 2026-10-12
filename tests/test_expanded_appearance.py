@@ -36,8 +36,23 @@ def test_brand_does_not_leak_to_unrelated_garment():
 
 
 def test_missing_information_is_not_invented():
-    facts = enhance_features_from_text({}, "검은색 반팔티, 마지막 목격 장소 서울역", "")
+    model_guess = {
+        "name": "임의 이름", "nationality": "대한민국", "skin_tone": "밝은 편",
+        "hair_color": "검은색", "hair_length": "짧음", "hair_texture": "직모",
+        "hair_style": "투블럭", "body_type": "마른 편", "glasses": "안경",
+        "hat_type": "모자", "last_seen_location": "부산역", "alert_area": "서울",
+    }
+    facts = enhance_features_from_text(model_guess, "검은색 반팔티, 마지막 목격 장소 서울역", "")
     assert not facts.get("body_type")
     assert not facts.get("hair_style")
+    assert not facts.get("hair_color")
+    assert not facts.get("hair_length")
+    assert not facts.get("hair_texture")
+    assert not facts.get("glasses")
+    assert not facts.get("hat_type")
+    assert not facts.get("nationality")
+    assert not facts.get("name")
+    assert not facts.get("alert_area")
+    assert facts.get("last_seen_location") == "서울역"
     assert not facts.get("top_brand")
     assert "서울역" not in facts.get("image_prompt_en", "")
