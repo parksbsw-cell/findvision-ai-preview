@@ -41,7 +41,7 @@ st.set_page_config(
 cookie_controller = CookieController()
 
 TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
-IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
+IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
 DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
 FAST_FALLBACK_MODEL = "@cf/black-forest-labs/flux-1-schnell"
 PHOTO_REALISM_FALLBACK_MODEL = "@cf/black-forest-labs/flux-2-dev"
@@ -49,8 +49,8 @@ VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
 MAX_ATTEMPTS = 1
 FAST_ATTEMPTS = 1
-FAST_WIDTH = 448
-FAST_HEIGHT = 672
+FAST_WIDTH = 512
+FAST_HEIGHT = 768
 DETAILED_WIDTH = 1024
 DETAILED_HEIGHT = 1344
 GENERATION_LIMIT = 5
