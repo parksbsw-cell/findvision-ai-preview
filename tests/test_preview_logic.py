@@ -75,6 +75,35 @@ def test_explicit_absence_of_glasses_is_preserved():
     assert recovered["glasses"] == "없음"
 
 
+def test_compact_alert_recovers_core_facts_and_default_image_inputs():
+    recovered = enhance_features_from_text(
+        {},
+        "이름 구자운, 남,18세, 175CM,74KG, 검은색 반팔, 검은색 바지, 검은색 크록스, 안경",
+        "",
+    )
+    assert recovered["name"] == "구자운"
+    assert recovered["gender"] == "남성"
+    assert recovered["age"] == "18세"
+    assert recovered["height"] == "175cm"
+    assert recovered["weight"] == "74kg"
+    assert recovered["top"] == "검은색 반팔"
+    assert recovered["bottom"] == "검은색 바지"
+    assert recovered["shoes"] == "검은색 크록스"
+    assert recovered["shoes_brand"] == "크록스"
+    assert recovered["glasses"] == "안경"
+
+
+def test_cane_rubber_shoes_and_mobility_aids_are_explicitly_recovered():
+    recovered = enhance_features_from_text(
+        {}, "여, 81세, 검은색 고무신, 오른손에 갈색 지팡이, 보행기", ""
+    )
+    assert recovered["gender"] == "여성"
+    assert recovered["age"] == "81세"
+    assert recovered["shoes"] == "검은색 고무신"
+    assert "오른손에 갈색 지팡이" in recovered["accessories"]
+    assert "보행기" in recovered["accessories"]
+
+
 def test_explicit_korean_details_recover_missing_clothing_and_hair():
     original = (
         "아시아인, 동양인, 남자, 17세, 키 177, 몸무게 62, 피부톤은 밝은 편, "

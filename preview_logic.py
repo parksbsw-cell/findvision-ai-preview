@@ -46,8 +46,8 @@ HAIRSTYLES = (
 CLOTHES = {
     "top": r"반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|셔츠|니트|(?<!색)상의",
     "outerwear": r"후드\s*집업|바람막이|패딩|점퍼|자켓|재킷|코트|외투|겉옷|조끼|작업복",
-    "bottom": r"반바지|긴바지|청바지|슬랙스|치마|레깅스|바지|하의",
-    "shoes": r"운동화|크록스|슬리퍼|샌들|구두|단화|부츠|신발",
+    "bottom": r"반바지|긴바지|청바지|슬랙스|치마|레깅스|트레이닝복\s*바지|츄리닝\s*바지|바지|하의",
+    "shoes": r"운동화|크록스|고무신|장화|로퍼|워커|슬리퍼|샌들|구두|단화|부츠|신발",
     "hat_type": r"등산모자|캡모자|야구모자|벙거지|버킷햇|비니|중절모|모자",
 }
 
@@ -168,6 +168,7 @@ def _explicit_accessories(text: str) -> list[str]:
         (rf"({color_or_detail}빨대)", ""),
         (rf"({color_or_detail}버클(?:\s*장식)?)", ""),
         (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}우산)", ""),
+        (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}지팡이)", ""),
         (rf"({color_or_detail}(?:작은\s*)?(?:손가방|백팩|가방))", ""),
         (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
         (rf"((?:왼손목|오른손목)(?:에)?\s*{color_or_detail}(?:손목\s*)?시계)", ""),
@@ -175,6 +176,9 @@ def _explicit_accessories(text: str) -> list[str]:
         (rf"((?:목에\s*)?{color_or_detail}(?:[가-힣]+\s*모양\s*)?목걸이)", ""),
         (rf"({color_or_detail}(?:[가-힣]+\s*모양\s*)?팔찌)", ""),
         (rf"({color_or_detail}우산)", ""),
+        (rf"({color_or_detail}(?:접이식\s*)?지팡이)", ""),
+        (rf"({color_or_detail}(?:보행기|휠체어))", ""),
+        (rf"({color_or_detail}(?:마스크|보청기|귀걸이|반지|장갑))", ""),
         (rf"({color_or_detail}지갑)", ""),
         (r"소지품\s*[:：]?\s*([가-힣A-Za-z0-9]+)", ""),
     ):
@@ -227,6 +231,30 @@ def _explicit_facial_hair(text: str) -> str:
 def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = False) -> None:
     if not text.strip():
         return
+    if overwrite or not _has_value(features, "name"):
+        match = re.search(r"(?:이름\s*[:：]?\s*)([가-힣]{2,5})", text)
+        if match:
+            features["name"] = match.group(1)
+    if overwrite or not _has_value(features, "gender"):
+        match = re.search(r"(?:^|[,，/\s])(남성|남자|남|여성|여자|여)(?=$|[,，/\s])", text)
+        if match:
+            features["gender"] = "남성" if match.group(1) in {"남성", "남자", "남"} else "여성"
+    if overwrite or not _has_value(features, "age"):
+        match = re.search(r"(?:나이\s*[:：]?\s*)?(\d{1,3})\s*세", text)
+        if match:
+            features["age"] = f"{match.group(1)}세"
+    if overwrite or not _has_value(features, "height"):
+        match = re.search(r"(?:키\s*[:：]?\s*)?(\d{2,3})\s*cm\b", text, re.I)
+        if match:
+            features["height"] = f"{match.group(1)}cm"
+    if overwrite or not _has_value(features, "weight"):
+        match = re.search(r"(?:몸무게\s*[:：]?\s*)?(\d{2,3})\s*kg\b", text, re.I)
+        if match:
+            features["weight"] = f"{match.group(1)}kg"
+    if overwrite or not _has_value(features, "nationality"):
+        match = re.search(r"(대한민국|한국인|한국|미국인|미국|일본인|일본|중국인|중국)", text)
+        if match:
+            features["nationality"] = match.group(1)
     if overwrite or not _has_value(features, "skin_tone"):
         match = re.search(r"피부(?:톤|는)?\s*(밝은\s*편|어두운\s*편|보통|희고|검은\s*편)", text)
         if match:
@@ -452,10 +480,10 @@ EVIDENCE_KEYWORDS = {
     "top": ("상의", "반팔", "긴팔", "티셔츠", "셔츠", "니트", "후드"),
     "outerwear": ("외투", "겉옷", "점퍼", "자켓", "재킷", "코트", "패딩", "작업복"),
     "bottom": ("하의", "반바지", "긴바지", "청바지", "슬랙스", "치마"),
-    "shoes": ("신발", "운동화", "크록스", "슬리퍼", "샌들", "구두", "부츠"),
+    "shoes": ("신발", "운동화", "크록스", "고무신", "장화", "로퍼", "워커", "슬리퍼", "샌들", "구두", "부츠"),
     "hat_type": ("모자", "비니", "버킷햇", "벙거지"), "hat_color": ("모자",),
     "glasses": ("안경",), "facial_hair": ("수염", "콧수염", "턱수염"),
-    "accessories": ("가방", "휴대폰", "지갑", "우산", "목걸이", "팔찌", "시계", "소지품"),
+    "accessories": ("가방", "휴대폰", "지갑", "우산", "지팡이", "보행기", "휠체어", "마스크", "보청기", "귀걸이", "반지", "장갑", "목걸이", "팔찌", "시계", "소지품"),
     "special_features": ("특징", "흉터", "문신", "점"),
     "last_seen_location": ("목격", "위치"), "alert_area": ("발송 지역", "재난문자"),
 }

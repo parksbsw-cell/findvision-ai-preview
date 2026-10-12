@@ -93,7 +93,7 @@ def test_retry_survives_reruns_without_duplicate_count(monkeypatch):
     assert "two-block" in prompt and "jeans" in prompt
 
 
-@pytest.mark.parametrize("vision_error,fail_second,expected", [(False, False, 3), (True, False, 1), (False, True, 2)])
+@pytest.mark.parametrize("vision_error,fail_second,expected", [(False, False, 1), (True, False, 1), (False, True, 1)])
 def test_precise_attempt_limits_and_partial_result(monkeypatch, vision_error, fail_second, expected):
     app, calls = setup_app(monkeypatch, precise=True, vision_error=vision_error, fail_second=fail_second)
     assert not app.exception
@@ -102,22 +102,22 @@ def test_precise_attempt_limits_and_partial_result(monkeypatch, vision_error, fa
     assert app.session_state["last_result"]["best"]["image"] == base64.b64decode(PNG)
     assert "never-display-this-secret" not in str(app.error)
     image_call = next(k for u, k in calls if "flux" in u)
-    assert image_call["files"]["width"][1] == "896"
-    assert image_call["files"]["height"][1] == "1152"
+    assert image_call["files"]["width"][1] == "1024"
+    assert image_call["files"]["height"][1] == "1344"
     assert "flux-2-klein-9b" in next(u for u, _ in calls if "flux" in u)
 
 
 def test_analytics_is_private_and_emitted_once_per_result(monkeypatch):
     app, calls = setup_app(monkeypatch, analytics=True)
     events = [(u, k) for u, k in calls if "cluesight_events" in u]
-    assert len(events) == 1
-    payload = events[0][1]["json"]
+    assert len(events) == 2  # one anonymous visit plus one completed image
+    payload = next(event[1]["json"] for event in events if event[1]["json"]["total_seconds"] != 0)
     assert payload["attempts"] == 1
     assert payload["total_seconds"] >= payload["first_image_seconds"] >= 0
     assert not {"message", "image", "name", "last_seen_location"} & payload.keys()
     assert "Authorization" not in events[0][1]["headers"]
     app.run()
-    assert sum("cluesight_events" in u for u, _ in calls) == 1
+    assert sum("cluesight_events" in u for u, _ in calls) == 2
 
 
 def test_explicit_brand_and_region_override_model_hallucination():

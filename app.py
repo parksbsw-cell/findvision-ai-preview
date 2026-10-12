@@ -43,15 +43,16 @@ cookie_controller = CookieController()
 TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
 IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
 DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
+FAST_FALLBACK_MODEL = "@cf/black-forest-labs/flux-1-schnell"
 PHOTO_REALISM_FALLBACK_MODEL = "@cf/black-forest-labs/flux-2-dev"
 VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
 MAX_ATTEMPTS = 1
 FAST_ATTEMPTS = 1
-FAST_WIDTH = 512
-FAST_HEIGHT = 768
-DETAILED_WIDTH = 896
-DETAILED_HEIGHT = 1152
+FAST_WIDTH = 448
+FAST_HEIGHT = 672
+DETAILED_WIDTH = 1024
+DETAILED_HEIGHT = 1344
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
@@ -381,6 +382,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("코트", "coat"), ("외투", "coat"), ("겉옷", "outerwear"),
         ("슬랙스", "slacks"), ("치마", "skirt"), ("레깅스", "leggings"),
         ("부츠", "boots"), ("구두", "dress shoes"), ("샌들", "sandals"),
+        ("고무신", "traditional Korean rubber shoes"), ("장화", "rubber boots"),
+        ("로퍼", "loafers"), ("워커", "lace-up combat boots"),
         ("단화", "flat shoes"), ("백팩", "backpack"),
         ("검은색", "black"),
         ("검정색", "black"),
@@ -415,7 +418,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("반바지", "shorts"),
         ("긴바지", "long pants"),
         ("바지", "pants"),
-        ("크록스", "Crocs"),
+        ("크록스", "perforated foam clogs with heel straps"),
         ("슬리퍼", "slippers"),
         ("운동화", "sneakers"),
         ("모자(종류 불명)", "hat of unspecified type"),
@@ -426,7 +429,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("버섯머리", "mushroom bowl haircut with an even rounded fringe covering the forehead, no center part"),
         ("직모", "straight hair"),
         ("곱슬", "curly hair"),
-        ("안경", "glasses"),
+        ("안경", "clearly visible eyeglasses with frames and lenses"),
         ("없음", "none"),
         ("작은가방", "small bag"),
         ("손가방", "handbag"),
@@ -434,6 +437,14 @@ def phrase_to_prompt_en(value: str) -> str:
         ("휴대폰", "phone"),
         ("지갑", "wallet"),
         ("우산", "umbrella"),
+        ("지팡이", "walking cane"),
+        ("보행기", "walking frame"),
+        ("휠체어", "wheelchair"),
+        ("마스크", "face mask"),
+        ("보청기", "hearing aid"),
+        ("귀걸이", "earrings"),
+        ("반지", "ring"),
+        ("장갑", "gloves"),
         ("목걸이", "necklace"),
         ("팔찌", "bracelet"),
         ("손목시계", "wristwatch"),
@@ -466,7 +477,9 @@ def sync_prompt_text_from_structured_features(features: dict) -> dict:
         for brand in BRANDS:
             if brand.lower() not in {"crocs", "크록스"}:
                 value = re.sub(re.escape(brand), "", value, flags=re.I)
-        value = value.replace("크록스", "clogs").replace("Crocs", "clogs")
+        value = value.replace(
+            "크록스", "perforated foam clogs with heel straps"
+        ).replace("Crocs", "perforated foam clogs with heel straps")
         value = re.sub(r"로고\s*(있는|없는)|[()]", "", value).strip()
         part = f"{key.replace('_', ' ')}: {phrase_to_prompt_en(value)}"
         parts.append(part)
@@ -550,10 +563,13 @@ def build_generation_prompt(
         "Exactly one person, standing naturally in a straight front view. Keep the entire head, both "
         "hands, every carried item, legs and both shoes fully inside the frame with comfortable margins. "
         "Use realistic anatomy, natural proportions, sharp fabric texture, neutral documentary lighting, "
-        "high detail, plain light studio background and contemporary clothing. "
+        "high detail, plain light studio background and contemporary clothing. Use an ordinary, natural, "
+        "age-appropriate appearance rather than a fashion model or celebrity look. Keep a neutral "
+        "expression and realistic facial anatomy. "
         + origin_instruction +
         "Match only the stated appearance facts; unspecified details are illustrative. "
-        "No extra person, extra limb, duplicate item, text, letters, logos, watermark or decorative props. "
+        "No extra person, extra limb, duplicate item, text, letters, logos, badges, emblems, watermark, "
+        "jewelry, collar, pocket decoration or prop unless explicitly stated. "
         + layers + " " + button_state + haircut + possessions + "\n" + description
     )
     if correction:
@@ -562,14 +578,13 @@ def build_generation_prompt(
 
 
 def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, str]:
-    # Try the fast Klein model first, then a higher-fidelity photo model if Cloudflare
-    # throttles this request. The second path still uses the real image provider.
-    model = DETAILED_IMAGE_MODEL if width >= DETAILED_WIDTH else IMAGE_MODEL
+    detailed = width >= DETAILED_WIDTH
+    model = DETAILED_IMAGE_MODEL if detailed else IMAGE_MODEL
     fields = {
         "prompt": prompt,
         "width": width,
         "height": height,
-        "guidance": 4.5 if width >= DETAILED_WIDTH else 4.0,
+        "guidance": 5.0 if detailed else 4.0,
     }
     try:
         result = cloudflare_multipart_request(model, fields)
@@ -590,13 +605,19 @@ def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, st
             ) from primary_error
         if not re.search(r"HTTP 429|오류 코드 (?:4006|3040)", primary_message):
             raise
-        photo_fields = {
-            **fields,
-            "guidance": 3.5,
-            "steps": 25,
-        }
         try:
-            result = cloudflare_multipart_request(PHOTO_REALISM_FALLBACK_MODEL, photo_fields)
+            if detailed:
+                result = cloudflare_multipart_request(
+                    PHOTO_REALISM_FALLBACK_MODEL,
+                    {**fields, "guidance": 4.0, "steps": 28},
+                )
+            else:
+                # Keep the fast path fast even when Klein 4B is temporarily
+                # throttled. FLUX.1 Schnell is designed for four-step previews.
+                result = cloudflare_json_request(
+                    FAST_FALLBACK_MODEL,
+                    {"prompt": prompt[:2048], "steps": 4},
+                )
         except RuntimeError as photo_error:
             raise RuntimeError(
                 f"기본 이미지 AI와 실사 보조 모델 모두 요청을 처리하지 못했습니다. "
@@ -1235,7 +1256,7 @@ show_public_retention_metrics()
 
 st.caption(
     "상세 실종 재난문자를 AI가 분석하고, 인상착의를 반영한 "
-    "현대적인 전신 참고 이미지를 생성합니다. 정밀 생성은 Vision AI 검수와 재생성을 진행합니다."
+    "현대적인 전신 참고 이미지를 생성합니다. 정밀 생성은 고해상도 생성 후 Vision AI 검수를 진행합니다."
 )
 
 st.warning(
@@ -1321,7 +1342,7 @@ if features:
 
     mode = st.radio(
         "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
-        help="빠른 생성은 작은 이미지 1회를 바로 표시하고, 정밀 생성은 큰 이미지 1회를 생성한 뒤 Vision AI로 한 번 검수합니다.",
+        help="빠른 생성은 속도 최적화 모델로 고품질 이미지를 바로 표시하고, 정밀 생성은 더 큰 고해상도 이미지 1회를 생성한 뒤 Vision AI로 한 번 검수합니다.",
     )
     source_changed = message.strip() != st.session_state.get("analysis_message", "")
     if source_changed:

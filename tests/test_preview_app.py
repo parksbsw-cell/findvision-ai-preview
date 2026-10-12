@@ -139,7 +139,7 @@ def test_image_provider_failure_shows_no_fake_image(monkeypatch):
                     "top": "검은색 반팔티", "bottom": "검은색 바지", "shoes": "검은색 크록스",
                 }}
             )
-        if "flux-2-klein" in url or "flux-2-dev" in url:
+        if "flux-2-klein" in url or "flux-2-dev" in url or "flux-1-schnell" in url:
             return FakeImageRateLimitResponse()
         raise AssertionError(f"Unexpected API: {url}")
 
@@ -189,7 +189,7 @@ def test_daily_neuron_quota_does_not_retry_same_account_fallback(monkeypatch):
 
 
 
-def test_throttled_fast_model_tries_photorealistic_model(monkeypatch):
+def test_throttled_fast_model_tries_fast_schnell_model(monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
     calls = []
@@ -209,8 +209,8 @@ def test_throttled_fast_model_tries_photorealistic_model(monkeypatch):
             )
         if "flux-2-klein" in url:
             return FakeImageRateLimitResponse()
-        if "flux-2-dev" in url:
-            assert kwargs["files"]["steps"][1] == "25"
+        if "flux-1-schnell" in url:
+            assert kwargs["json"]["steps"] == 4
             return FakeResponse({"image": base64.b64encode(one_pixel_png).decode()})
         raise AssertionError(f"Unexpected API: {url}")
 
@@ -224,7 +224,7 @@ def test_throttled_fast_model_tries_photorealistic_model(monkeypatch):
     assert not app.exception
     assert not app.error
     assert len(app.image) == 1
-    assert any("flux-2-dev" in url for url, _ in calls)
+    assert any("flux-1-schnell" in url for url, _ in calls)
 
 
 
