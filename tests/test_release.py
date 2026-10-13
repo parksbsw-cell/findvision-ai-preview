@@ -211,6 +211,19 @@ def test_generation_prompt_strengthens_haircut_and_possessions(monkeypatch):
     assert "duplicate item" in prompt
 
 
+def test_generation_and_verification_forbid_invented_bags(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    import app
+
+    prompt = app.build_generation_prompt({
+        "gender": "남성", "top": "검은색 반팔티", "bottom": "검은색 바지",
+        "shoes": "흰색 운동화", "accessories": "",
+    }, "")
+    assert "both hands empty" in prompt
+    assert "Do not add any bag, backpack, handbag, tote, pouch" in prompt
+
+
 def test_detailed_korean_accessory_terms_are_translated(monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")

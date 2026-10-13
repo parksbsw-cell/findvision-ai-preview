@@ -91,3 +91,21 @@ def test_model_cannot_swap_top_and_outerwear_categories():
     assert facts["outerwear"] == "남색 잠바"
     assert facts["bottom"] == "회색 면바지"
     assert facts["shoes"] == "검은색 안전화"
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("흰색 생활복, 남색 가디건, 검은 등산 바지, 회색 실내화", "top", "생활복"),
+        ("흰색 생활복, 남색 가디건, 검은 등산 바지, 회색 실내화", "outerwear", "가디건"),
+        ("흰색 생활복, 남색 가디건, 검은 등산 바지, 회색 실내화", "bottom", "등산 바지"),
+        ("흰색 생활복, 남색 가디건, 검은 등산 바지, 회색 실내화", "shoes", "실내화"),
+        ("체크 남방, 경량 패딩, 칠부 바지, 털신", "top", "체크 남방"),
+        ("체크 남방, 경량 패딩, 칠부 바지, 털신", "outerwear", "경량 패딩"),
+        ("체크 남방, 경량 패딩, 칠부 바지, 털신", "bottom", "칠부 바지"),
+        ("체크 남방, 경량 패딩, 칠부 바지, 털신", "shoes", "털신"),
+    ],
+)
+def test_more_real_world_clothing_terms(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")

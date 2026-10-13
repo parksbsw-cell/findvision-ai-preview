@@ -387,11 +387,20 @@ def phrase_to_prompt_en(value: str) -> str:
         ("코트", "coat"), ("외투", "coat"), ("겉옷", "outerwear"),
         ("남방", "casual button-up shirt"), ("내의", "undershirt"),
         ("등산복", "hiking top"), ("체육복", "athletic uniform"),
+        ("생활복", "school casual uniform"), ("교복", "school uniform"),
+        ("잠옷", "pajama top"), ("스웨터", "sweater"),
+        ("후리스", "fleece jacket"), ("플리스", "fleece jacket"),
+        ("카디건", "cardigan"), ("가디건", "cardigan"),
+        ("항공 점퍼", "bomber jacket"), ("야상 점퍼", "field jacket"),
+        ("롱패딩", "long puffer coat"), ("경량 패딩", "lightweight puffer jacket"),
         ("슬랙스", "slacks"), ("치마", "skirt"), ("레깅스", "leggings"),
         ("면바지", "cotton pants"), ("고무줄 바지", "elastic-waist pants"),
+        ("등산 바지", "hiking pants"), ("작업 바지", "work pants"),
+        ("멜빵 바지", "overalls"), ("칠부 바지", "cropped pants"), ("고쟁이", "loose pants"),
         ("부츠", "boots"), ("구두", "dress shoes"), ("샌들", "sandals"),
         ("고무신", "traditional Korean rubber shoes"), ("장화", "rubber boots"),
         ("등산화", "hiking shoes"), ("안전화", "safety shoes"),
+        ("아쿠아 슈즈", "water shoes"), ("털신", "fur-lined shoes"), ("실내화", "indoor slippers"),
         ("로퍼", "loafers"), ("워커", "lace-up combat boots"),
         ("단화", "flat shoes"), ("백팩", "backpack"),
         ("검은색", "black"),
@@ -560,7 +569,9 @@ def build_generation_prompt(
     possessions = (
         "Show every stated possession and accessory exactly once, with its stated color, shape, "
         "parts and hand/body placement clearly visible. Do not merge, duplicate or substitute them. "
-        if features.get("accessories") else ""
+        if features.get("accessories") else
+        "No possession or accessory was specified. Keep both hands empty and visible at the sides. "
+        "Do not add any bag, backpack, handbag, tote, pouch, phone, umbrella, cane, watch or jewelry. "
     )
     button_state = (
         "The stated button/closure state is mandatory. Keep the outer shirt fully open so the inner "
@@ -716,6 +727,11 @@ def verify_image(image_b64: str, mime_type: str, features: dict) -> dict:
         if has_outerwear
         else "No outerwear was specified; do not require a coat or jacket."
     )
+    accessory_check = (
+        "Every stated possession/accessory must appear exactly once."
+        if str(features.get("accessories", "") or "").strip()
+        else "No possession/accessory was specified. Reject any bag, backpack, handbag, tote, pouch, phone, umbrella, cane, watch or jewelry."
+    )
     outerwear_rejection = (
         "- required outerwear type/color/layer is wrong or missing"
         if has_outerwear
@@ -732,6 +748,7 @@ USER-SUPPLIED STRUCTURED APPEARANCE FACTS (source of truth):
 {structured_facts}
 
 {outerwear_check}
+{accessory_check}
 Never verify a brand by assuming a logo must appear.
 Name and location are context, not visual appearance requirements.
 
