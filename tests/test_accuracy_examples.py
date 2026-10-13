@@ -59,3 +59,20 @@ def test_layered_tops_without_inner_word_are_kept_separate():
     assert "반팔" in facts["top"]
     assert "흰색" in facts["outerwear"]
     assert "학교" in facts["outerwear"]
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("곤색 잠바, 회색계열 면바지, 검정 안전화", "outerwear", "남색 잠바"),
+        ("곤색 잠바, 회색계열 면바지, 검정 안전화", "bottom", "회색 면바지"),
+        ("곤색 잠바, 회색계열 면바지, 검정 안전화", "shoes", "안전화"),
+        ("카키색 남방, 아이보리 고무줄 바지", "top", "카키색 남방"),
+        ("카키색 남방, 아이보리 고무줄 바지", "bottom", "아이보리색 고무줄 바지"),
+        ("오른손에 목발, 왼손에 파란 장바구니", "accessories", "오른손에 목발"),
+        ("오른손에 목발, 왼손에 파란 장바구니", "accessories", "왼손에 파란 장바구니"),
+    ],
+)
+def test_common_disaster_message_vocabulary(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")

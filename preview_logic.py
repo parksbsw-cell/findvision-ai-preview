@@ -29,7 +29,7 @@ METADATA = {
     "hat_type": ("hat_brand", "브랜드"),
     "hat_color": ("hat_brand", "브랜드"),
 }
-COLORS = r"검은색|검정색|검은|검정|흰색|하얀색|흰|하얀|회색|빨간색|빨간|붉은색|붉은|파란색|파란|남색|초록색|초록|노란색|노란|베이지색|베이지|갈색|분홍색|분홍|보라색|보라|주황색|주황|은색|금색"
+COLORS = r"검은색|검정색|검은|검정|흰색|하얀색|흰|하얀|회색계열|회색|빨간색|빨간|붉은색|붉은|파란색|파란|청색|남색|곤색|초록색|초록|연두색|연두|노란색|노란|베이지색|베이지|아이보리색|아이보리|카키색|카키|갈색|밤색|분홍색|분홍|보라색|보라|자주색|자주|주황색|주황|은색|금색"
 BRANDS = (
     "뉴발란스", "아디다스", "나이키", "푸마", "언더아머", "데상트", "휠라",
     "노스페이스", "디스커버리", "내셔널지오그래픽", "유니클로", "무신사",
@@ -44,11 +44,11 @@ HAIRSTYLES = (
     "묶은머리", "땋은머리", "곱슬머리", "파마머리", "파마",
 )
 CLOTHES = {
-    "top": r"원피스|반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|셔츠|니트|(?<!색)상의",
-    "outerwear": r"후드\s*집업|바람막이|패딩|점퍼|자켓|재킷|코트|외투|겉옷|조끼|작업복",
-    "bottom": r"몸빼\s*바지|몸빼바지|반바지|긴바지|청바지|슬랙스|치마|레깅스|트레이닝복\s*바지|츄리닝\s*바지|바지|하의",
-    "shoes": r"운동화|크록스|고무신|장화|로퍼|워커|슬리퍼|샌들|구두|단화|부츠|신발",
-    "hat_type": r"등산모자|캡모자|야구모자|벙거지|버킷햇|비니|중절모|모자",
+    "top": r"원피스|반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|남방|셔츠|니트|내의|등산복|체육복|(?<!색)상의",
+    "outerwear": r"후드\s*집업|바람막이|패딩|점퍼|잠바|자켓|재킷|코트|외투|겉옷|조끼|작업복",
+    "bottom": r"몸빼\s*바지|몸빼바지|고무줄\s*바지|면바지|반바지|긴바지|청바지|슬랙스|치마|레깅스|트레이닝복\s*바지|츄리닝\s*바지|바지|하의",
+    "shoes": r"운동화|등산화|안전화|크록스|고무신|장화|로퍼|워커|슬리퍼|샌들|구두|단화|부츠|신발",
+    "hat_type": r"등산모자|캡모자|야구모자|털모자|벙거지|버킷햇|비니|중절모|모자",
 }
 
 
@@ -89,6 +89,9 @@ def _normalize_color(value: str) -> str:
         "빨간": "빨간색", "붉은": "붉은색", "파란": "파란색",
         "초록": "초록색", "노란": "노란색", "베이지": "베이지색",
         "분홍": "분홍색", "보라": "보라색", "주황": "주황색",
+        "청색": "파란색", "곤색": "남색", "연두": "연두색",
+        "카키": "카키색", "밤색": "갈색", "자주": "자주색",
+        "아이보리": "아이보리색", "회색계열": "회색",
     }.get(value, value)
 
 
@@ -184,19 +187,19 @@ def _explicit_accessories(text: str) -> list[str]:
         (rf"({color_or_detail}우산)", ""),
         (rf"({color_or_detail}(?:접이식\s*)?지팡이)", ""),
         (rf"({color_or_detail}(?:보행기|휠체어))", ""),
+        (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}(?:목발|장바구니|에코백|파우치))", ""),
+        (rf"({color_or_detail}(?:목발|장바구니|에코백|파우치))", ""),
         (rf"({color_or_detail}(?:마스크|보청기|귀걸이|반지|장갑))", ""),
         (rf"({color_or_detail}지갑)", ""),
         (r"소지품\s*[:：]?\s*([가-힣A-Za-z0-9]+)", ""),
     ):
-        match = re.search(pattern, text)
-        if not match:
-            continue
-        value = match.group(1) if not label and match.groups() else label
-        value = re.sub(r"작은\s+가방", "작은가방", value).strip()
-        if re.fullmatch(r"손목\s*시계", value):
-            value = "시계"
-        if value and value not in found:
-            found.append(value)
+        for match in re.finditer(pattern, text):
+            value = match.group(1) if not label and match.groups() else label
+            value = re.sub(r"작은\s+가방", "작은가방", value).strip()
+            if re.fullmatch(r"손목\s*시계", value):
+                value = "시계"
+            if value and value not in found:
+                found.append(value)
     return [
         phrase for phrase in found
         if not any(phrase != other and phrase in other for other in found)
