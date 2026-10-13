@@ -108,7 +108,7 @@ def _color_in(value: str) -> str:
 def _extract_clothing(text: str, clothing_words: str) -> str:
     pattern = (
         rf"({COLORS})?\s*(?:(?:{'|'.join(re.escape(b) for b in BRANDS)})\s*)?"
-        rf"((?:(?:로고\s*(?:있는|없는)|무지|학교|얇은|두꺼운|꽃무늬|줄무늬|체크무늬|민소매|목폴라|긴팔|반팔|긴|짧은)\s*)*)"
+        rf"((?:(?:로고\s*(?:있는|없는)|무지|학교|교복|정장|등산용|여름용|얇은|두꺼운|꽃무늬|줄무늬|체크무늬|민소매|목폴라|긴팔|반팔|긴|짧은)\s*)*)"
         rf"({clothing_words})"
     )
     matches = list(re.finditer(pattern, text))
@@ -126,7 +126,7 @@ def _explicit_top_layers(text: str) -> tuple[str, str]:
         # 재난문자에는 조사 없이 "검은 반팔티 위에 흰 셔츠"처럼
         # 압축해서 적는 경우가 많다. 두 옷 사이의 '위에'도 겹쳐 입기로 본다.
         top = CLOTHES["top"]
-        garment = rf"(?:{COLORS})?\s*(?:(?:학교|얇은|두꺼운|꽃무늬|줄무늬|체크무늬|무지|긴팔|반팔)\s*)*(?:{top})"
+        garment = rf"(?:{COLORS})?\s*(?:(?:학교|교복|정장|등산용|여름용|얇은|두꺼운|꽃무늬|줄무늬|체크무늬|무지|긴팔|반팔)\s*)*(?:{top})"
         match = re.search(rf"(?P<inner>{garment})\s*(?:을|를)?\s*(?:그\s*)?위에\s*(?P<outer>{garment})", text)
     if not match:
         return "", ""
@@ -405,13 +405,15 @@ def enhance_features_from_text(features: dict[str, Any], original: str, details:
     if inner_top and outer_top:
         enhanced["top"] = inner_top
         enhanced["outerwear"] = outer_top
-    # Model output cannot invent a garment category. This prevents an explicit
-    # jacket from being copied into bottoms as matching suit pants.
+    # Deterministic source-text associations are authoritative. A model can
+    # otherwise swap "곤색 잠바, 카키 남방" into top/outerwear even though
+    # both garment categories are present in the message.
     for garment in ("top", "outerwear", "bottom", "shoes"):
         if garment == "outerwear" and inner_top and outer_top:
             continue
-        if not re.search(CLOTHES[garment], combined_text):
-            enhanced[garment] = ""
+        if garment == "top" and inner_top and outer_top:
+            continue
+        enhanced[garment] = explicit.get(garment, "")
     # Explicit category associations override model guesses (e.g. shirt brand on shoes).
     for garment, brand_key in (("top", "top_brand"), ("outerwear", "outerwear_brand"),
                                ("bottom", "bottom_brand"), ("shoes", "shoes_brand"),

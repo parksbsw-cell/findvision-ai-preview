@@ -76,3 +76,18 @@ def test_layered_tops_without_inner_word_are_kept_separate():
 def test_common_disaster_message_vocabulary(text, key, expected):
     facts = enhance_features_from_text({}, text, "")
     assert expected in facts.get(key, "")
+
+
+def test_model_cannot_swap_top_and_outerwear_categories():
+    model_guess = {
+        "top": "곤색 잠바",
+        "outerwear": "카키색 남방",
+        "bottom": "검정 안전화",
+        "shoes": "회색 면바지",
+    }
+    text = "남, 79세, 곤색 잠바, 카키색 남방, 회색계열 면바지, 검정 안전화"
+    facts = enhance_features_from_text(model_guess, text, "")
+    assert facts["top"] == "카키색 남방"
+    assert facts["outerwear"] == "남색 잠바"
+    assert facts["bottom"] == "회색 면바지"
+    assert facts["shoes"] == "검은색 안전화"
