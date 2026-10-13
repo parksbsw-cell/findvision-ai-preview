@@ -166,6 +166,12 @@ def test_only_explicit_accessories_survive_model_output():
     assert enhance_features_from_text(model, original, "")["accessories"] == "작은가방 휴대폰 시계"
 
 
+def test_negated_bag_is_never_added_as_an_accessory():
+    model = {"accessories": "검은색 가방"}
+    for original in ("가방 없음", "가방 미소지", "가방을 들고 있지 않음"):
+        assert enhance_features_from_text(model, original, "")["accessories"] == ""
+
+
 def test_model_cannot_copy_hair_into_facial_hair():
     model = {"facial_hair": "짧은 검은색 곱슬머리"}
     assert enhance_features_from_text(model, "짧은 검은색 곱슬머리", "")["facial_hair"] == ""

@@ -1263,7 +1263,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.09.20")
+st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.13")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")

@@ -168,6 +168,19 @@ def _explicit_accessories(text: str) -> list[str]:
     """Return only accessories that are explicitly present in user text."""
     if re.search(r"(?:소지품|액세서리)\s*[:：]?\s*(?:없음|없다|없)", text):
         return []
+    accessory_nouns = (
+        "가방", "백팩", "손가방", "에코백", "파우치", "휴대폰", "핸드폰", "스마트폰",
+        "우산", "지팡이", "목발", "보행기", "휠체어", "시계", "목걸이", "팔찌",
+        "마스크", "보청기", "귀걸이", "반지", "장갑", "지갑", "장바구니", "텀블러",
+    )
+    negated = {
+        noun for noun in accessory_nouns
+        if re.search(
+            rf"{re.escape(noun)}\s*(?:은|는|이|가|을|를)?\s*"
+            r"(?:없음|없다|없는|없|미소지|소지하지\s*않|들고\s*있지\s*않)",
+            text,
+        )
+    }
     found: list[str] = []
     color_or_detail = rf"(?:(?:{COLORS})|여러\s*색상의|다색|투명한?)?\s*"
     for pattern, label in (
@@ -198,6 +211,8 @@ def _explicit_accessories(text: str) -> list[str]:
             value = re.sub(r"작은\s+가방", "작은가방", value).strip()
             if re.fullmatch(r"손목\s*시계", value):
                 value = "시계"
+            if any(noun in value for noun in negated):
+                continue
             if value and value not in found:
                 found.append(value)
     return [
