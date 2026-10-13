@@ -109,3 +109,20 @@ def test_model_cannot_swap_top_and_outerwear_categories():
 def test_more_real_world_clothing_terms(text, key, expected):
     facts = enhance_features_from_text({}, text, "")
     assert expected in facts.get(key, "")
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("[서울특별시] 실종자(여, 84세), 백발 단발, 보행기 사용", "gender", "여성"),
+        ("[서울특별시] 실종자(여, 84세), 백발 단발, 보행기 사용", "hair_color", "백발"),
+        ("남 6세, 파란 줄무늬 긴팔티, 노란 장화, 빨간 책가방", "accessories", "빨간 책가방"),
+        ("남성 35세, 안에 흰 민소매, 회색 후드집업", "top", "민소매"),
+        ("여 72세, 흰색 파마머리, 보라 원피스", "hair_color", "흰색"),
+        ("남 50대, 빨간 체크 남방, 검정 조끼", "age", "50대"),
+        ("여 20대, 검은 롱패딩, 회색 후드티", "age", "20대"),
+    ],
+)
+def test_new_disaster_alert_edge_cases(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")

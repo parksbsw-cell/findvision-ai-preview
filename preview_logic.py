@@ -44,7 +44,7 @@ HAIRSTYLES = (
     "묶은머리", "땋은머리", "곱슬머리", "파마머리", "파마",
 )
 CLOTHES = {
-    "top": r"반팔\s*라운드\s*티|긴팔\s*남방|체크\s*남방|생활복|교복|잠옷|원피스|반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|남방|셔츠|니트|스웨터|내의|등산복|체육복|(?<!색)상의",
+    "top": r"반팔\s*라운드\s*티|긴팔\s*남방|체크\s*남방|생활복|교복|잠옷|원피스|민소매(?:\s*티(?:셔츠)?)?|반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|남방|셔츠|니트|스웨터|내의|등산복|체육복|(?<!색)상의",
     "outerwear": r"후드\s*집업|항공\s*점퍼|야상\s*점퍼|바람막이|롱패딩|경량\s*패딩|패딩|후리스|플리스|카디건|가디건|점퍼|잠바|자켓|재킷|코트|외투|겉옷|조끼|작업복",
     "bottom": r"몸빼\s*바지|몸빼바지|고쟁이|멜빵\s*바지|칠부\s*바지|고무줄\s*바지|등산\s*바지|작업\s*바지|면바지|반바지|긴바지|청바지|슬랙스|치마|레깅스|트레이닝복\s*바지|츄리닝\s*바지|바지|하의",
     "shoes": r"아쿠아\s*슈즈|털신|실내화|운동화|등산화|안전화|크록스|고무신|장화|로퍼|워커|슬리퍼|샌들|구두|단화|부츠|신발",
@@ -169,7 +169,7 @@ def _explicit_accessories(text: str) -> list[str]:
     if re.search(r"(?:소지품|액세서리)\s*[:：]?\s*(?:없음|없다|없)", text):
         return []
     accessory_nouns = (
-        "가방", "백팩", "손가방", "에코백", "파우치", "휴대폰", "핸드폰", "스마트폰",
+        "가방", "책가방", "보조가방", "백팩", "손가방", "에코백", "파우치", "휴대폰", "핸드폰", "스마트폰",
         "우산", "지팡이", "목발", "보행기", "휠체어", "시계", "목걸이", "팔찌",
         "마스크", "보청기", "귀걸이", "반지", "장갑", "지갑", "장바구니", "텀블러",
     )
@@ -191,7 +191,7 @@ def _explicit_accessories(text: str) -> list[str]:
         (rf"({color_or_detail}버클(?:\s*장식)?)", ""),
         (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}우산)", ""),
         (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}지팡이)", ""),
-        (rf"({color_or_detail}(?:작은\s*)?(?:손가방|백팩|가방))", ""),
+        (rf"({color_or_detail}(?:작은\s*)?(?:책가방|보조가방|손가방|백팩|가방))", ""),
         (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
         (rf"((?:왼손목|오른손목)(?:에)?\s*{color_or_detail}(?:손목\s*)?시계)", ""),
         (rf"({color_or_detail}(?:손목\s*)?시계)", ""),
@@ -260,13 +260,17 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         if match:
             features["name"] = match.group(1)
     if overwrite or not _has_value(features, "gender"):
-        match = re.search(r"(?:^|[,，/\s])(남성|남자|남|여성|여자|여)(?=$|[,，/\s])", text)
+        match = re.search(r"(?:^|[,，/()\[\]{}\s])(남성|남자|남|여성|여자|여)(?=$|[,，/()\[\]{}\s])", text)
         if match:
             features["gender"] = "남성" if match.group(1) in {"남성", "남자", "남"} else "여성"
     if overwrite or not _has_value(features, "age"):
         match = re.search(r"(?:나이\s*[:：]?\s*)?(\d{1,3})\s*세", text)
         if match:
             features["age"] = f"{match.group(1)}세"
+        else:
+            match = re.search(r"(?:나이\s*[:：]?\s*)?(\d{1,2})\s*대", text)
+            if match:
+                features["age"] = f"{match.group(1)}대"
     if overwrite or not _has_value(features, "height"):
         match = re.search(r"(?:키\s*[:：]?\s*)?(\d{2,3})\s*cm\b", text, re.I)
         if match:
@@ -284,7 +288,15 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         if match:
             features["skin_tone"] = match.group(1)
     if overwrite or not _has_value(features, "hair_color"):
-        color = _find_color_before(text, r"(?:머리|머리색)")
+        if "백발" in text or "흰머리" in text:
+            color = "백발"
+        elif "새치" in text:
+            color = "새치"
+        else:
+            color = _find_color_before(
+                text,
+                r"(?:파마머리|단발머리|곱슬머리|긴머리|묶은머리|땋은머리|생머리|머리|머리색)",
+            )
         if not color:
             match = re.search(rf"머리색\s*({COLORS})", text)
             color = _normalize_color(match.group(1)) if match else ""
