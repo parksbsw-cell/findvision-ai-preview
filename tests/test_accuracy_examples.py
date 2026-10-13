@@ -126,3 +126,30 @@ def test_more_real_world_clothing_terms(text, key, expected):
 def test_new_disaster_alert_edge_cases(text, key, expected):
     facts = enhance_features_from_text({}, text, "")
     assert expected in facts.get(key, "")
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("남, 77세, 대머리, 회색 양복, 흰 와이셔츠, 검정 구두, 갈색 서류가방", "hair_style", "대머리"),
+        ("남, 77세, 대머리, 회색 양복, 흰 와이셔츠, 검정 구두, 갈색 서류가방", "accessories", "갈색 서류가방"),
+        ("여, 81세, 짧은 백발, 청록색 반팔, 검정 치마바지, 자주색 효도화", "hair_length", "짧음"),
+        ("여, 81세, 짧은 백발, 청록색 반팔, 검정 치마바지, 자주색 효도화", "shoes", "효도화"),
+        ("남아 7세, 노랑 민소매티, 파랑 반바지, 흰 스니커즈", "gender", "남성"),
+        ("여아 5세, 양갈래머리, 분홍 원피스, 빨간 메리제인 구두, 인형 소지", "hair_style", "양갈래"),
+        ("여아 5세, 양갈래머리, 분홍 원피스, 빨간 메리제인 구두, 인형 소지", "accessories", "인형"),
+        ("남 40대, 청록 바람막이, 검정 카고바지, 회색 스니커즈", "bottom", "카고바지"),
+        ("여 60대, 밤색 개량한복 상의, 검정 통바지, 꽃무늬 밀짚모자, 검은 쇼핑백", "hat_type", "밀짚모자"),
+        ("남성, 곱슬 백발, 검정 뿔테안경, 남색 집업조끼", "glasses", "뿔테안경"),
+        ("여, 73세, 회색 커트머리, 빨간 목폴라, 버건디 단화, 검은 비닐봉지", "top", "목폴라"),
+        ("여, 73세, 회색 커트머리, 빨간 목폴라, 버건디 단화, 검은 비닐봉지", "accessories", "비닐봉지"),
+    ],
+)
+def test_additional_unseen_alert_vocabulary(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")
+
+
+def test_negated_crossbody_bag_is_not_added():
+    facts = enhance_features_from_text({}, "남 40대, 검정 카고바지, 크로스백 미소지", "")
+    assert not facts.get("accessories")

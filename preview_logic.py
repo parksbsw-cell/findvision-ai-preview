@@ -29,7 +29,7 @@ METADATA = {
     "hat_type": ("hat_brand", "브랜드"),
     "hat_color": ("hat_brand", "브랜드"),
 }
-COLORS = r"검은색|검정색|검은|검정|흰색|하얀색|흰|하얀|회색계열|회색|빨간색|빨간|붉은색|붉은|파란색|파란|청색|남색|곤색|초록색|초록|연두색|연두|노란색|노란|베이지색|베이지|아이보리색|아이보리|카키색|카키|갈색|밤색|분홍색|분홍|보라색|보라|자주색|자주|주황색|주황|은색|금색"
+COLORS = r"검은색|검정색|검은|검정|흰색|하얀색|흰|하얀|회색계열|회색|빨간색|빨간|붉은색|붉은|파란색|파란|파랑|청록색|청록|청색|남색|곤색|초록색|초록|연두색|연두|노란색|노란|노랑|베이지색|베이지|아이보리색|아이보리|카키색|카키|갈색|밤색|분홍색|분홍|보라색|보라|자주색|자주|버건디색|버건디|주황색|주황|은색|금색"
 BRANDS = (
     "뉴발란스", "아디다스", "나이키", "푸마", "언더아머", "데상트", "휠라",
     "노스페이스", "디스커버리", "내셔널지오그래픽", "유니클로", "무신사",
@@ -42,13 +42,14 @@ HAIRSTYLES = (
     "가르마펌", "리프컷", "댄디컷", "포마드", "스포츠머리", "반삭머리",
     "반삭", "삭발", "숏컷", "단발머리", "단발", "보브컷", "포니테일",
     "묶은머리", "땋은머리", "곱슬머리", "파마머리", "파마",
+    "양갈래머리", "양갈래", "커트머리", "대머리",
 )
 CLOTHES = {
-    "top": r"반팔\s*라운드\s*티|긴팔\s*남방|체크\s*남방|생활복|교복|잠옷|원피스|민소매(?:\s*티(?:셔츠)?)?|반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|남방|셔츠|니트|스웨터|내의|등산복|체육복|(?<!색)상의",
-    "outerwear": r"후드\s*집업|항공\s*점퍼|야상\s*점퍼|바람막이|롱패딩|경량\s*패딩|패딩|후리스|플리스|카디건|가디건|점퍼|잠바|자켓|재킷|코트|외투|겉옷|조끼|작업복",
-    "bottom": r"몸빼\s*바지|몸빼바지|고쟁이|멜빵\s*바지|칠부\s*바지|고무줄\s*바지|등산\s*바지|작업\s*바지|면바지|반바지|긴바지|청바지|슬랙스|치마|레깅스|트레이닝복\s*바지|츄리닝\s*바지|바지|하의",
-    "shoes": r"아쿠아\s*슈즈|털신|실내화|운동화|등산화|안전화|크록스|고무신|장화|로퍼|워커|슬리퍼|샌들|구두|단화|부츠|신발",
-    "hat_type": r"등산모자|캡모자|야구모자|털모자|벙거지|버킷햇|비니|중절모|모자",
+    "top": r"개량한복\s*상의|와이셔츠|반팔\s*라운드\s*티|긴팔\s*남방|체크\s*남방|생활복|교복|잠옷|원피스|민소매(?:\s*티(?:셔츠)?)?|목폴라(?:\s*티)?|반팔(?:\s*티(?:셔츠)?)?|긴팔(?:\s*티(?:셔츠)?)?|티셔츠|맨투맨|후드티|폴로티|카라티|블라우스|남방|셔츠|니트|스웨터|내의|등산복|체육복|(?<!색)상의",
+    "outerwear": r"후드\s*집업|집업\s*조끼|항공\s*점퍼|야상\s*점퍼|바람막이|롱패딩|경량\s*패딩|패딩|후리스|플리스|카디건|가디건|점퍼|잠바|자켓|재킷|양복|코트|외투|겉옷|조끼|작업복",
+    "bottom": r"몸빼\s*바지|몸빼바지|치마\s*바지|카고\s*바지|통\s*바지|고쟁이|멜빵\s*바지|칠부\s*바지|고무줄\s*바지|등산\s*바지|작업\s*바지|면바지|반바지|긴바지|청바지|슬랙스|치마|레깅스|트레이닝복\s*바지|츄리닝\s*바지|바지|하의",
+    "shoes": r"메리제인(?:\s*구두)?|아쿠아\s*슈즈|스니커즈|효도화|털신|실내화|운동화|등산화|안전화|크록스|고무신|장화|로퍼|워커|슬리퍼|샌들|구두|단화|부츠|신발",
+    "hat_type": r"밀짚모자|등산모자|캡모자|야구모자|털모자|벙거지|버킷햇|비니|중절모|모자",
 }
 
 
@@ -92,6 +93,8 @@ def _normalize_color(value: str) -> str:
         "청색": "파란색", "곤색": "남색", "연두": "연두색",
         "카키": "카키색", "밤색": "갈색", "자주": "자주색",
         "아이보리": "아이보리색", "회색계열": "회색",
+        "파랑": "파란색", "청록": "청록색", "노랑": "노란색",
+        "버건디": "버건디색",
     }.get(value, value)
 
 
@@ -169,9 +172,9 @@ def _explicit_accessories(text: str) -> list[str]:
     if re.search(r"(?:소지품|액세서리)\s*[:：]?\s*(?:없음|없다|없)", text):
         return []
     accessory_nouns = (
-        "가방", "책가방", "보조가방", "백팩", "손가방", "에코백", "파우치", "휴대폰", "핸드폰", "스마트폰",
+        "가방", "책가방", "보조가방", "서류가방", "크로스백", "백팩", "손가방", "에코백", "쇼핑백", "파우치", "휴대폰", "핸드폰", "스마트폰",
         "우산", "지팡이", "목발", "보행기", "휠체어", "시계", "목걸이", "팔찌",
-        "마스크", "보청기", "귀걸이", "반지", "장갑", "지갑", "장바구니", "텀블러",
+        "마스크", "보청기", "귀걸이", "반지", "장갑", "지갑", "장바구니", "텀블러", "인형", "비닐봉지",
     )
     negated = {
         noun for noun in accessory_nouns
@@ -191,7 +194,7 @@ def _explicit_accessories(text: str) -> list[str]:
         (rf"({color_or_detail}버클(?:\s*장식)?)", ""),
         (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}우산)", ""),
         (rf"((?:왼손|오른손|양손)(?:에|으로)?\s*{color_or_detail}지팡이)", ""),
-        (rf"({color_or_detail}(?:작은\s*)?(?:책가방|보조가방|손가방|백팩|가방))", ""),
+        (rf"({color_or_detail}(?:작은\s*)?(?:책가방|보조가방|서류가방|크로스백|손가방|에코백|쇼핑백|백팩|가방))", ""),
         (r"휴대폰|핸드폰|스마트폰", "휴대폰"),
         (rf"((?:왼손목|오른손목)(?:에)?\s*{color_or_detail}(?:손목\s*)?시계)", ""),
         (rf"({color_or_detail}(?:손목\s*)?시계)", ""),
@@ -204,6 +207,7 @@ def _explicit_accessories(text: str) -> list[str]:
         (rf"({color_or_detail}(?:목발|장바구니|에코백|파우치))", ""),
         (rf"({color_or_detail}(?:마스크|보청기|귀걸이|반지|장갑))", ""),
         (rf"({color_or_detail}지갑)", ""),
+        (rf"({color_or_detail}(?:인형|비닐봉지))", ""),
         (r"소지품\s*[:：]?\s*([가-힣A-Za-z0-9]+)", ""),
     ):
         for match in re.finditer(pattern, text):
@@ -260,9 +264,9 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         if match:
             features["name"] = match.group(1)
     if overwrite or not _has_value(features, "gender"):
-        match = re.search(r"(?:^|[,，/()\[\]{}\s])(남성|남자|남|여성|여자|여)(?=$|[,，/()\[\]{}\s])", text)
+        match = re.search(r"(?:^|[,，/()\[\]{}\s])(남아|여아|남성|남자|남|여성|여자|여)(?=$|[,，/()\[\]{}\s]|\d)", text)
         if match:
-            features["gender"] = "남성" if match.group(1) in {"남성", "남자", "남"} else "여성"
+            features["gender"] = "남성" if match.group(1) in {"남아", "남성", "남자", "남"} else "여성"
     if overwrite or not _has_value(features, "age"):
         match = re.search(r"(?:나이\s*[:：]?\s*)?(\d{1,3})\s*세", text)
         if match:
@@ -304,8 +308,10 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
             features["hair_color"] = color
     if overwrite or not _has_value(features, "hair_length"):
         match = re.search(r"머리(?:길이)?\s*(약간\s*짧음|짧음|짧은|긴|중간|장발)", text)
+        if not match:
+            match = re.search(r"(약간\s*짧은|짧은|긴)\s*(?:백발|흰머리|머리)", text)
         if match:
-            features["hair_length"] = match.group(1).replace("짧은", "짧음")
+            features["hair_length"] = match.group(1).replace("약간 짧은", "약간 짧음").replace("짧은", "짧음").replace("긴", "김")
     if "직모" in text and (overwrite or not _has_value(features, "hair_texture")):
         features["hair_texture"] = "직모"
     if "생머리" in text and (overwrite or not _has_value(features, "hair_texture")):
@@ -375,7 +381,7 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
             features["shoes"] = _merge_words(match.group(1), str(features["shoes"]))
     hat_match = re.search(
         rf"({COLORS})?\s*((?:챙\s*(?:넓은|좁은)\s*)?"
-        r"(?:등산모자|캡모자|야구모자|벙거지|버킷햇|비니|중절모|모자))",
+        r"(?:밀짚모자|등산모자|캡모자|야구모자|털모자|벙거지|버킷햇|비니|중절모|모자))",
         text,
     )
     hat_color = _normalize_color(hat_match.group(1)) if hat_match and hat_match.group(1) else ""
@@ -395,7 +401,11 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         if overwrite or not _has_value(features, "glasses"):
             features["glasses"] = "없음"
     elif re.search(r"안경", text) and (overwrite or not _has_value(features, "glasses")):
-        features["glasses"] = "안경"
+        match = re.search(rf"({COLORS})?\s*(뿔테|금테|은테|무테)?\s*안경", text)
+        features["glasses"] = _merge_words(
+            _normalize_color(match.group(1) or "") if match else "",
+            (match.group(2) + "안경") if match and match.group(2) else "안경",
+        )
     if re.search(r"수염\s*없", text) and (overwrite or not _has_value(features, "facial_hair")):
         features["facial_hair"] = "없음"
     accessory_terms = _explicit_accessories(text)
@@ -534,13 +544,13 @@ EVIDENCE_KEYWORDS = {
     "skin_tone": ("피부", "피부톤"), "hair_color": ("머리색", "머리카락"),
     "hair_length": ("머리길이", "머리 길이", "장발", "단발", "짧"),
     "hair_texture": ("직모", "곱슬"), "hair_style": HAIRSTYLES,
-    "top": ("상의", "반팔", "긴팔", "티셔츠", "셔츠", "니트", "후드"),
-    "outerwear": ("외투", "겉옷", "점퍼", "자켓", "재킷", "코트", "패딩", "작업복"),
-    "bottom": ("하의", "반바지", "긴바지", "청바지", "슬랙스", "치마"),
-    "shoes": ("신발", "운동화", "크록스", "고무신", "장화", "로퍼", "워커", "슬리퍼", "샌들", "구두", "부츠"),
-    "hat_type": ("모자", "비니", "버킷햇", "벙거지"), "hat_color": ("모자",),
+    "top": ("상의", "반팔", "긴팔", "민소매", "티셔츠", "셔츠", "니트", "후드", "목폴라", "한복"),
+    "outerwear": ("외투", "겉옷", "점퍼", "자켓", "재킷", "코트", "패딩", "작업복", "양복", "조끼"),
+    "bottom": ("하의", "반바지", "긴바지", "청바지", "슬랙스", "치마", "카고바지", "통바지"),
+    "shoes": ("신발", "운동화", "스니커즈", "효도화", "메리제인", "크록스", "고무신", "장화", "로퍼", "워커", "슬리퍼", "샌들", "구두", "부츠"),
+    "hat_type": ("모자", "밀짚모자", "비니", "버킷햇", "벙거지"), "hat_color": ("모자",),
     "glasses": ("안경",), "facial_hair": ("수염", "콧수염", "턱수염"),
-    "accessories": ("가방", "휴대폰", "지갑", "우산", "지팡이", "보행기", "휠체어", "마스크", "보청기", "귀걸이", "반지", "장갑", "목걸이", "팔찌", "시계", "소지품"),
+    "accessories": ("가방", "쇼핑백", "비닐봉지", "인형", "휴대폰", "지갑", "우산", "지팡이", "보행기", "휠체어", "마스크", "보청기", "귀걸이", "반지", "장갑", "목걸이", "팔찌", "시계", "소지품"),
     "special_features": ("특징", "흉터", "문신", "점"),
     "last_seen_location": ("목격", "위치"), "alert_area": ("발송 지역", "재난문자"),
 }
