@@ -124,7 +124,7 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
     assert "모델 평가 점수" not in visible_messages
     assert "검수 점수" not in visible_messages
     assert any(button.label == "다시 생성하기" for button in app.button)
-    assert len(calls) == 2  # one extraction and one image; fast mode skips vision
+    assert len(calls) == 3  # one extraction, one image and one fast Vision check
 
 
 def test_image_provider_failure_shows_no_fake_image(monkeypatch):

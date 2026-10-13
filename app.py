@@ -48,7 +48,7 @@ PHOTO_REALISM_FALLBACK_MODEL = "@cf/black-forest-labs/flux-2-dev"
 VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
 MAX_ATTEMPTS = 1
-FAST_ATTEMPTS = 1
+FAST_ATTEMPTS = 2
 FAST_WIDTH = 512
 FAST_HEIGHT = 768
 DETAILED_WIDTH = 1024
@@ -1230,10 +1230,8 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
         attempts_completed += 1
         if first_image_seconds is None:
             first_image_seconds = time.perf_counter() - started_at
-        if mode == "빠른 생성":
-            verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
-                       "feedback_en": "", "available": False, "skipped": True}
-        else:
+        should_verify = mode == "정밀 생성" or attempt == 1
+        if should_verify:
             interim.image(image_bytes, caption="생성 완료 · 자동 검수 중", use_container_width=True)
             status.info(f"{attempt}차 이미지 검수 중...")
             try:
@@ -1241,9 +1239,16 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
             except Exception:
                 verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
                            "feedback_en": "", "available": False, "skipped": False}
+        else:
+            # 빠른 생성은 첫 결과만 한 번 검수한다. 불합격한 경우 검수의
+            # 보정 지시로 두 번째 이미지를 만들되 추가 검수는 하지 않는다.
+            verdict = {"score": 0, "pass": False, "missing": [], "wrong": [],
+                       "feedback_en": "", "available": False, "skipped": True}
         candidate = {"attempt": attempt, "image": image_bytes, "mime_type": mime_type,
                      "verification": verdict}
-        if best is None or (verdict["pass"], verdict["available"], verdict["score"]) > (
+        if mode == "빠른 생성" and attempt > 1:
+            best = candidate
+        elif best is None or (verdict["pass"], verdict["available"], verdict["score"]) > (
                 best["verification"]["pass"], best["verification"]["available"],
                 best["verification"]["score"]):
             best = candidate
@@ -1433,7 +1438,7 @@ if result:
     st.caption("각 요청에서 측정한 시간입니다. 속도·인상착의 정확도를 보장하지 않습니다.")
     st.image(best["image"], caption=f"{best['attempt']}차 생성 결과", use_container_width=True)
     if verdict.get("skipped"):
-        st.info("빠른 생성은 속도를 위해 자동 검수를 생략했습니다. 결과를 직접 확인해 주세요.")
+        st.info("첫 이미지를 한 번 검수한 뒤 발견된 오류를 반영해 빠르게 다시 생성했습니다. 최종 결과를 직접 확인해 주세요.")
     elif not verdict["available"]:
         st.warning("자동 검수를 완료하지 못했습니다. 생성 이미지를 보존했으며 사람이 확인해야 합니다.")
     elif verdict["pass"]:
