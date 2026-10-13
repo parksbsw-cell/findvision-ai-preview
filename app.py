@@ -1289,7 +1289,8 @@ show_public_retention_metrics()
 
 st.caption(
     "상세 실종 재난문자를 AI가 분석하고, 인상착의를 반영한 "
-    "현대적인 전신 참고 이미지를 생성합니다. 정밀 생성은 고해상도 생성 후 Vision AI 검수를 진행합니다."
+    "현대적인 전신 참고 이미지를 생성합니다. 모든 생성은 Vision AI로 한 번 검수하며, "
+    "빠른 생성은 오류가 발견될 때만 보정 이미지를 다시 만듭니다."
 )
 
 st.warning(
@@ -1375,7 +1376,7 @@ if features:
 
     mode = st.radio(
         "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
-        help="빠른 생성은 속도 최적화 모델로 고품질 이미지를 바로 표시하고, 정밀 생성은 더 큰 고해상도 이미지 1회를 생성한 뒤 Vision AI로 한 번 검수합니다.",
+        help="빠른 생성은 첫 이미지를 한 번 검수하고 오류가 있을 때만 빠르게 보정합니다. 정밀 생성은 더 큰 고해상도 이미지를 생성한 뒤 한 번 검수합니다.",
     )
     source_changed = message.strip() != st.session_state.get("analysis_message", "")
     if source_changed:
