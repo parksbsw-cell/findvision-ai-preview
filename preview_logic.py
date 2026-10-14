@@ -103,6 +103,23 @@ def _find_color_before(text: str, noun_pattern: str) -> str:
     return _normalize_color(match.group(1)) if match else ""
 
 
+def extract_age(text: str) -> str:
+    """Return an explicitly written age without guessing from appearance."""
+    patterns = (
+        (r"(?:만\s*)?(\d{1,3})\s*[~～\-–]\s*(\d{1,3})\s*세", lambda m: f"{m.group(1)}~{m.group(2)}세"),
+        (r"(\d{1,2})\s*[~～\-–]\s*(\d{1,2})\s*대", lambda m: f"{m.group(1)}~{m.group(2)}대"),
+        (r"(\d{1,2})\s*대\s*(초반|중반|후반)", lambda m: f"{m.group(1)}대 {m.group(2)}"),
+        (r"(?:나이\s*[:：]?\s*)?(?:만\s*)?(\d{1,3})\s*(?:세|살)", lambda m: f"{m.group(1)}세"),
+        (r"(?:나이\s*[:：]?\s*)?(\d{1,2})\s*대", lambda m: f"{m.group(1)}대"),
+        (r"((?:19|20)\d{2})\s*년생", lambda m: f"{m.group(1)}년생"),
+    )
+    for pattern, formatter in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return formatter(match)
+    return ""
+
+
 def _color_in(value: str) -> str:
     match = re.search(rf"({COLORS})", value)
     return _normalize_color(match.group(1)) if match else ""
@@ -268,13 +285,9 @@ def _apply_text_facts(features: dict[str, Any], text: str, overwrite: bool = Fal
         if match:
             features["gender"] = "남성" if match.group(1) in {"남아", "남성", "남자", "남"} else "여성"
     if overwrite or not _has_value(features, "age"):
-        match = re.search(r"(?:나이\s*[:：]?\s*)?(\d{1,3})\s*세", text)
-        if match:
-            features["age"] = f"{match.group(1)}세"
-        else:
-            match = re.search(r"(?:나이\s*[:：]?\s*)?(\d{1,2})\s*대", text)
-            if match:
-                features["age"] = f"{match.group(1)}대"
+        age = extract_age(text)
+        if age:
+            features["age"] = age
     if overwrite or not _has_value(features, "height"):
         match = re.search(r"(?:키\s*[:：]?\s*)?(\d{2,3})\s*cm\b", text, re.I)
         if match:
@@ -539,7 +552,7 @@ def category_text(features: dict[str, Any], key: str) -> str:
 
 EVIDENCE_KEYWORDS = {
     "gender": ("남성", "여성", "남자", "여자"),
-    "age": ("세", "나이"), "height": ("키", "cm"), "weight": ("몸무게", "kg"),
+    "age": ("세", "살", "대", "년생", "나이"), "height": ("키", "cm"), "weight": ("몸무게", "kg"),
     "body_type": ("체형", "비만", "저체중", "통통", "마른", "건장"),
     "skin_tone": ("피부", "피부톤"), "hair_color": ("머리색", "머리카락"),
     "hair_length": ("머리길이", "머리 길이", "장발", "단발", "짧"),

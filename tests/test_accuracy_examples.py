@@ -2,7 +2,7 @@
 
 import pytest
 
-from preview_logic import enhance_features_from_text
+from preview_logic import enhance_features_from_text, extract_age
 
 EXAMPLES = [
     ("검은색 반팔티 착용", "top", "반팔티"),
@@ -153,3 +153,22 @@ def test_additional_unseen_alert_vocabulary(text, key, expected):
 def test_negated_crossbody_bag_is_not_added():
     facts = enhance_features_from_text({}, "남 40대, 검정 카고바지, 크로스백 미소지", "")
     assert not facts.get("accessories")
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("실종자 남성, 만 78세, 회색 점퍼", "78세"),
+        ("여아 8살, 분홍 원피스", "8세"),
+        ("나이: 81 세, 검정 바지", "81세"),
+        ("70대 후반 남성, 남색 모자", "70대 후반"),
+        ("40대 중반 여성, 흰 운동화", "40대 중반"),
+        ("70~80세 추정, 회색 상의", "70~80세"),
+        ("50-60대 추정 남성", "50~60대"),
+        ("2015년생 남아, 파란 반팔", "2015년생"),
+        ("나이 미상, 검정 외투", ""),
+    ],
+)
+def test_age_variants_used_in_alerts(text, expected):
+    assert extract_age(text) == expected
+    assert enhance_features_from_text({}, text, "").get("age", "") == expected

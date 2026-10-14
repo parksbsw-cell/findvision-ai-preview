@@ -19,6 +19,7 @@ from preview_logic import (
     BRANDS,
     analysis_message,
     enhance_features_from_text,
+    extract_age,
     find_contradictions,
     image_mime,
     known_appearance_count,
@@ -327,11 +328,10 @@ verification_requirements_en 규칙:
         # Provider throttling (HTTP 429) can prevent analysis from starting.
         # Extract only explicit source facts so the user still receives a result.
         features = enhance_features_from_text({key: "" for key in FIELDS}, original, "")
-        age = re.search(r"(\d{1,3}\s*세|\d{1,2}\s*대)", original)
         gender = re.search(r"남성|남자|여성|여자", original)
         height = re.search(r"(?:키\s*)?(\d{2,3})\s*cm\b", original, re.I)
         weight = re.search(r"(?:몸무게\s*)?(\d{2,3})\s*kg\b", original, re.I)
-        features["age"] = age.group(1).replace(" ", "") if age else ""
+        features["age"] = extract_age(original)
         features["gender"] = ("남성" if gender and gender.group(0) in {"남성", "남자"}
                               else "여성" if gender else "")
         features["height"] = f"{height.group(1)}cm" if height else ""
@@ -1283,7 +1283,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.13")
+st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.14")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
