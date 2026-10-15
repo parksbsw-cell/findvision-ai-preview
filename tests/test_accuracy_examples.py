@@ -252,3 +252,32 @@ def test_shoulder_bag_is_not_misclassified_as_a_shawl():
     facts = enhance_features_from_text({}, "여 74세, 선글라스, 갈색 숄더백", "")
     assert facts["accessories"] == "갈색 숄더백"
     assert not facts.get("outerwear")
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("여 81세, 분홍 저고리, 남색 한복치마, 흰 버선, 은색 비녀", "bottom", "한복치마"),
+        ("여 81세, 분홍 저고리, 남색 한복치마, 흰 버선, 은색 비녀", "accessories", "비녀"),
+        ("남 77세, 회색 개량한복, 검정 고무신, 염주", "top", "개량한복"),
+        ("남 77세, 회색 개량한복, 검정 고무신, 염주", "accessories", "염주"),
+        ("여 68세, 자주색 누빔조끼, 꽃무늬 몸빼, 검정 덧신", "outerwear", "누빔조끼"),
+        ("여 68세, 자주색 누빔조끼, 꽃무늬 몸빼, 검정 덧신", "shoes", "덧신"),
+        ("남 84세, 환자복 상하의, 파란 병원팔찌, 흰 실내화", "accessories", "병원팔찌"),
+        ("남 84세, 환자복 상하의, 파란 병원팔찌, 흰 실내화", "bottom", "환자복 바지"),
+        ("여 72세, 검정 나팔바지, 장바구니카트", "bottom", "나팔바지"),
+        ("여 72세, 검정 나팔바지, 장바구니카트", "accessories", "장바구니카트"),
+        ("남 9세, 회색 조거팬츠, 초록 물통", "bottom", "조거팬츠"),
+        ("남 9세, 회색 조거팬츠, 초록 물통", "accessories", "물통"),
+        ("여 16세, 검정 후드, 청치마, 흰 캔버스화, 무선이어폰", "top", "후드"),
+        ("여 16세, 검정 후드, 청치마, 흰 캔버스화, 무선이어폰", "shoes", "캔버스화"),
+        ("여 16세, 검정 후드, 청치마, 흰 캔버스화, 무선이어폰", "accessories", "무선이어폰"),
+        ("남 35세, 형광 작업조끼, 검정 등산바지, 등산스틱 2개", "accessories", "등산스틱 2개"),
+        ("여 59세, 베이지 트렌치코트, 검정 롱스커트, 갈색 앵클부츠", "outerwear", "트렌치코트"),
+        ("여 59세, 베이지 트렌치코트, 검정 롱스커트, 갈색 앵클부츠", "shoes", "앵클부츠"),
+        ("남 70세, 남색 골프웨어, 베이지 골프바지, 흰 골프화, 선캡", "hat_type", "선캡"),
+    ],
+)
+def test_traditional_clothes_and_field_possessions(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")
