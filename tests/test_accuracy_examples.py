@@ -281,3 +281,40 @@ def test_shoulder_bag_is_not_misclassified_as_a_shawl():
 def test_traditional_clothes_and_field_possessions(text, key, expected):
     facts = enhance_features_from_text({}, text, "")
     assert expected in facts.get(key, "")
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("남 82세, 신장 165, 체중 55, 쥐색 잠바", "height", "165cm"),
+        ("남 82세, 신장 165, 체중 55, 쥐색 잠바", "weight", "55kg"),
+        ("남 82세, 쥐색 잠바, 허리가 굽고 절뚝거림", "outerwear", "회색 잠바"),
+        ("남 82세, 쥐색 잠바, 허리가 굽고 절뚝거림", "special_features", "허리가 굽은 자세"),
+        ("여 76세, 연한 파란색 니트, 와인색 치마, 네이비 운동화", "bottom", "와인색 치마"),
+        ("여 76세, 연한 파란색 니트, 와인색 치마, 네이비 운동화", "shoes", "남색 운동화"),
+        ("남 61세, 민트색 반팔, 황토색 반바지, 회색 쪼리", "shoes", "쪼리"),
+        ("여 70세, 밤색 털코트, 검정 기모바지, 갈색 방한화", "outerwear", "털코트"),
+        ("여 70세, 밤색 털코트, 검정 기모바지, 갈색 방한화", "shoes", "방한화"),
+        ("남 12세, 주황 아노락, 검정 조거바지, 흰 농구화, 목에 학생증", "outerwear", "아노락"),
+        ("남 12세, 주황 아노락, 검정 조거바지, 흰 농구화, 목에 학생증", "accessories", "학생증"),
+        ("여 17세, 아이보리 후드집업", "outerwear", "후드집업"),
+        ("여 17세, 회색 플리츠스커트, 에어팟", "bottom", "플리츠스커트"),
+        ("여 17세, 회색 플리츠스커트, 에어팟", "accessories", "에어팟"),
+        ("남 73세, 파란 돕바, 목장갑, 왼쪽 다리를 절음", "outerwear", "돕바"),
+        ("남 73세, 파란 돕바, 목장갑, 왼쪽 다리를 절음", "special_features", "왼쪽 다리 절뚝거리는 보행"),
+        ("여 65세, 빨간 폴라티, 검정 승마바지, 갈색 털부츠, 귀마개", "accessories", "귀마개"),
+        ("남 48세, 회색 수트, 파란 넥타이, 검정 정장구두, 서류봉투", "outerwear", "수트"),
+        ("남 48세, 회색 수트, 파란 넥타이, 검정 정장구두, 서류봉투", "accessories", "넥타이"),
+        ("여 79세, 흰색 내복 상하의, 분홍 덧버선, 은색 보행카트", "bottom", "흰색 내복 바지"),
+        ("여 79세, 흰색 내복 상하의, 분홍 덧버선, 은색 보행카트", "accessories", "보행카트"),
+    ],
+)
+def test_alias_colors_posture_and_winter_items(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")
+
+
+def test_zip_up_hoodie_is_not_duplicated_as_an_inner_hoodie():
+    facts = enhance_features_from_text({}, "여 17세, 아이보리 후드집업", "")
+    assert facts["outerwear"] == "아이보리색 후드집업"
+    assert not facts.get("top")

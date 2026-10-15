@@ -383,7 +383,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("개량한복 상의", "modernized hanbok top"),
         ("개량한복", "modernized traditional Korean outfit"),
         ("와이셔츠", "dress shirt"), ("골프웨어", "golf shirt"),
-        ("목폴라", "turtleneck top"), ("양복", "business suit jacket"),
+        ("목폴라", "turtleneck top"), ("폴라티", "turtleneck top"),
+        ("양복", "business suit jacket"),
         ("집업조끼", "zip-up vest"), ("누빔조끼", "quilted vest"),
         ("작업조끼", "work vest"),
         ("우비", "raincoat"), ("앞치마", "apron"),
@@ -404,6 +405,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("남방", "casual button-up shirt"), ("런닝셔츠", "sleeveless undershirt"),
         ("러닝셔츠", "sleeveless undershirt"),
         ("환자복 바지", "hospital patient pants"), ("환자복", "hospital patient gown"),
+        ("내복 상의", "thermal underwear top"), ("내복 바지", "thermal underwear pants"),
         ("내복", "thermal underwear"), ("내의", "undershirt"),
         ("저고리", "traditional Korean jeogori jacket"),
         ("등산복", "hiking top"), ("체육복", "athletic uniform"),
@@ -413,7 +415,9 @@ def phrase_to_prompt_en(value: str) -> str:
         ("카디건", "cardigan"), ("가디건", "cardigan"),
         ("항공 점퍼", "bomber jacket"), ("야상 점퍼", "field jacket"),
         ("깔깔이", "quilted military liner jacket"), ("마고자", "traditional Korean magoja jacket"),
-        ("트렌치코트", "trench coat"), ("숄더백", "shoulder bag"), ("숄", "shawl"),
+        ("트렌치코트", "trench coat"), ("털코트", "fur-lined coat"),
+        ("아노락", "anorak jacket"), ("돕바", "heavy winter jacket"),
+        ("수트", "business suit"), ("숄더백", "shoulder bag"), ("숄", "shawl"),
         ("롱패딩", "long puffer coat"), ("경량 패딩", "lightweight puffer jacket"),
         ("슬랙스", "slacks"), ("치마", "skirt"), ("레깅스", "leggings"),
         ("면바지", "cotton pants"), ("고무줄 바지", "elastic-waist pants"),
@@ -425,6 +429,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("한복치마", "traditional Korean hanbok skirt"), ("나팔바지", "flared pants"),
         ("조거팬츠", "jogger pants"), ("골프바지", "golf pants"),
         ("청치마", "denim skirt"), ("롱스커트", "long skirt"),
+        ("플리츠스커트", "pleated skirt"), ("기모바지", "fleece-lined pants"),
+        ("승마바지", "riding pants"), ("조거바지", "jogger pants"),
         ("치마바지", "culottes"), ("카고바지", "cargo pants"), ("통바지", "wide-leg pants"),
         ("레인부츠", "rain boots"), ("꽃무늬 버선", "floral traditional socks"),
         ("버선", "traditional Korean socks"), ("맨발", "bare feet"),
@@ -437,7 +443,10 @@ def phrase_to_prompt_en(value: str) -> str:
         ("전투화", "combat boots"), ("주름치마", "pleated skirt"),
         ("하이탑 운동화", "high-top sneakers"),
         ("앵클부츠", "ankle boots"), ("캔버스화", "canvas sneakers"),
-        ("골프화", "golf shoes"), ("덧신", "slip-on overshoes"),
+        ("골프화", "golf shoes"), ("덧버선", "warm oversocks"),
+        ("덧신", "slip-on overshoes"), ("털부츠", "fur-lined boots"),
+        ("정장구두", "formal dress shoes"), ("농구화", "basketball shoes"),
+        ("방한화", "winter shoes"), ("쪼리", "flip-flops"),
         ("오토바이 헬멧", "motorcycle helmet"), ("안전모", "safety helmet"),
         ("헬멧", "helmet"), ("두건", "head scarf"), ("선캡", "sun visor"),
         ("밀짚모자", "straw hat"),
@@ -459,6 +468,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("파란색", "blue"),
         ("남색", "navy"),
         ("청록색", "teal"), ("버건디색", "burgundy"),
+        ("쥐색", "gray"), ("네이비", "navy"), ("민트색", "mint green"),
+        ("황토색", "ochre"), ("와인색", "wine red"),
         ("은색", "silver"),
         ("금색", "gold"),
         ("밝은 편", "light skin tone"),
@@ -514,6 +525,10 @@ def phrase_to_prompt_en(value: str) -> str:
         ("무선이어폰", "wireless earbuds"), ("등산스틱", "trekking poles"),
         ("비녀", "traditional Korean hairpin"), ("염주", "prayer beads"),
         ("물통", "water bottle"),
+        ("보행카트", "walking support cart"), ("학생증", "student ID card on a neck strap"),
+        ("에어팟", "wireless earbuds"), ("귀마개", "earmuffs"),
+        ("넥타이", "necktie"), ("서류봉투", "document envelope"),
+        ("목장갑", "work gloves"),
         ("보청기", "hearing aid"),
         ("귀걸이", "earrings"),
         ("반지", "ring"),
@@ -533,6 +548,10 @@ def phrase_to_prompt_en(value: str) -> str:
         ("모든 단추를 푼 상태", "worn fully unbuttoned with every button open"),
         ("단추를 푼 상태", "worn unbuttoned"),
         ("모든 단추를 잠근 상태", "worn fully buttoned"),
+        ("허리가 굽은 자세", "stooped posture with a visibly bent back"),
+        ("왼쪽 다리 절뚝거리는 보행", "a limp affecting the left leg"),
+        ("오른쪽 다리 절뚝거리는 보행", "a limp affecting the right leg"),
+        ("절뚝거리는 보행", "a visible limp while walking"),
     ]
     for source, target in replacements:
         text = text.replace(source, target)
@@ -1321,7 +1340,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.18")
+st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.19")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
