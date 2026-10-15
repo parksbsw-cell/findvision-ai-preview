@@ -369,6 +369,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("양갈래머리", "two pigtails"), ("양갈래", "two pigtails"),
         ("커트머리", "short cropped haircut"), ("대머리", "bald head"),
         ("백발", "white hair"), ("흰머리", "white hair"), ("새치", "partially gray hair"),
+        ("희끗희끗한 머리", "salt-and-pepper gray hair"), ("웨이브머리", "wavy hair"),
         ("고도 비만", "very heavy build"), ("고도비만", "very heavy build"),
         ("보통 체형", "average build"), ("남성", "male"), ("여성", "female"),
         ("청바지", "jeans"), ("초록색", "green"), ("노란색", "yellow"),
@@ -382,6 +383,9 @@ def phrase_to_prompt_en(value: str) -> str:
         ("개량한복 상의", "modernized hanbok top"), ("와이셔츠", "dress shirt"),
         ("목폴라", "turtleneck top"), ("양복", "business suit jacket"),
         ("집업조끼", "zip-up vest"),
+        ("우비", "raincoat"), ("앞치마", "apron"),
+        ("군복 상의", "camouflage military top"), ("군복 바지", "camouflage military pants"),
+        ("얼룩무늬", "camouflage-patterned"), ("레이스", "lace-trimmed"),
         ("민소매티", "sleeveless shirt"), ("민소매", "sleeveless shirt"),
         ("줄무늬", "striped"), ("체크무늬", "check-patterned"),
         ("몸빼바지", "loose floral work pants"), ("몸빼 바지", "loose floral work pants"),
@@ -411,12 +415,15 @@ def phrase_to_prompt_en(value: str) -> str:
         ("아쿠아 슈즈", "water shoes"), ("털신", "fur-lined shoes"), ("실내화", "indoor slippers"),
         ("스니커즈", "sneakers"), ("효도화", "elderly comfort shoes"),
         ("메리제인 구두", "Mary Jane shoes"), ("메리제인", "Mary Jane shoes"),
+        ("전투화", "combat boots"), ("주름치마", "pleated skirt"),
         ("밀짚모자", "straw hat"),
         ("로퍼", "loafers"), ("워커", "lace-up combat boots"),
         ("단화", "flat shoes"), ("책가방", "school backpack"),
         ("보조가방", "secondary school bag"), ("백팩", "backpack"),
         ("서류가방", "briefcase"), ("크로스백", "crossbody bag"),
         ("쇼핑백", "shopping bag"), ("비닐봉지", "plastic bag"), ("인형", "doll"),
+        ("고무장갑", "rubber gloves"), ("토시", "arm sleeves"),
+        ("머리띠", "headband"), ("보행 보조기", "walking aid"), ("손수레", "handcart"),
         ("검은색", "black"),
         ("검정색", "black"),
         ("흰색", "white"),
@@ -1283,7 +1290,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.14")
+st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.15")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")

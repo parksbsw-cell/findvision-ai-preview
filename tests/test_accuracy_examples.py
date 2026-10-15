@@ -172,3 +172,26 @@ def test_negated_crossbody_bag_is_not_added():
 def test_age_variants_used_in_alerts(text, expected):
     assert extract_age(text) == expected
     assert enhance_features_from_text({}, text, "").get("age", "") == expected
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("남 66세, 노란 우비, 검정 장화, 투명 우산", "outerwear", "우비"),
+        ("여 75세, 꽃무늬 앞치마, 자주색 긴팔티", "outerwear", "앞치마"),
+        ("남 58세, 얼룩무늬 군복 상의, 군복 바지, 전투화", "top", "군복"),
+        ("남 58세, 얼룩무늬 군복 상의, 군복 바지, 전투화", "shoes", "전투화"),
+        ("여 69세, 짧은 웨이브머리, 두꺼운 검정테 안경", "hair_texture", "웨이브"),
+        ("여 69세, 짧은 웨이브머리, 두꺼운 검정테 안경", "glasses", "검정테"),
+        ("남 72세, 희끗희끗한 머리, 턱수염", "hair_color", "희끗희끗"),
+        ("여 80세, 분홍 토시, 갈색 지팡이, 보행 보조기", "accessories", "보행 보조기"),
+        ("남 63세, 청색 작업복, 고무장갑, 손수레", "accessories", "손수레"),
+        ("여 11세, 흰색 레이스 블라우스, 남색 주름치마, 분홍 머리띠", "bottom", "주름치마"),
+        ("여 11세, 흰색 레이스 블라우스, 남색 주름치마, 분홍 머리띠", "accessories", "머리띠"),
+        ("남 32세, 검정 반팔 상의, 오른팔 문신, 왼쪽 눈 밑 점", "special_features", "오른팔 문신"),
+        ("남 32세, 검정 반팔 상의, 오른팔 문신, 왼쪽 눈 밑 점", "special_features", "왼쪽 눈 밑 점"),
+    ],
+)
+def test_more_unseen_real_world_details(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")
