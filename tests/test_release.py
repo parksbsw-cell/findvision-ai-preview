@@ -277,3 +277,39 @@ def test_generation_prompt_requires_neutral_pose_and_realistic_face(monkeypatch)
         "no fashion pose", "naturally aligned eyes", "facial warping", "beauty retouching",
     ):
         assert requirement in prompt
+
+
+def test_long_korean_terms_translate_before_generic_suffixes(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    from app import phrase_to_prompt_en
+
+    expected = {
+        "베이지 트렌치코트": "beige trench coat",
+        "검정 정장구두": "black formal dress shoes",
+        "남색 한복치마": "navy traditional Korean hanbok skirt",
+        "분홍 덧버선": "pink warm oversocks",
+        "검정 롱패딩": "black long puffer coat",
+        "회색 후드 집업": "gray zip-up hoodie",
+    }
+    for source, translation in expected.items():
+        assert phrase_to_prompt_en(source) == translation
+
+
+def test_age_and_common_field_terms_become_english(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    from app import phrase_to_prompt_en
+
+    assert phrase_to_prompt_en("79세") == "79 years old"
+    assert phrase_to_prompt_en("70대 후반") == "in their late 70s"
+    assert phrase_to_prompt_en("2015년생") == "born in 2015"
+    assert phrase_to_prompt_en("파란 작업복") == "blue workwear"
+
+
+def test_jumper_is_not_misread_as_a_mole():
+    from preview_logic import enhance_features_from_text
+
+    facts = enhance_features_from_text({}, "실종자 남성, 만 78세, 회색 점퍼", "")
+    assert facts["outerwear"] == "회색 점퍼"
+    assert not facts.get("special_features")

@@ -373,11 +373,16 @@ def phrase_to_prompt_en(value: str) -> str:
         ("고도 비만", "very heavy build"), ("고도비만", "very heavy build"),
         ("보통 체형", "average build"), ("남성", "male"), ("여성", "female"),
         ("청바지", "jeans"), ("초록색", "green"), ("노란색", "yellow"),
+        ("파란", "blue"), ("빨간", "red"), ("검은", "black"),
+        ("노란", "yellow"), ("초록", "green"), ("분홍", "pink"),
+        ("보라", "purple"), ("주황", "orange"),
         ("베이지색", "beige"), ("갈색", "brown"), ("분홍색", "pink"),
         ("보라색", "purple"), ("주황색", "orange"),
         ("아이보리색", "ivory"), ("카키색", "khaki"), ("연두색", "light green"),
+        ("베이지", "beige"), ("아이보리", "ivory"), ("카키", "khaki"),
         ("자주색", "burgundy"), ("청색", "blue"), ("곤색", "navy"), ("밤색", "brown"),
         ("후드집업", "zip-up hoodie"), ("후드티", "hoodie"), ("맨투맨", "sweatshirt"),
+        ("후드 집업", "zip-up hoodie"), ("후드", "hoodie"),
         ("티셔츠", "T-shirt"), ("블라우스", "blouse"), ("셔츠", "shirt"),
         ("원피스", "one-piece dress"), ("꽃무늬", "floral-patterned"),
         ("개량한복 상의", "modernized hanbok top"),
@@ -386,14 +391,17 @@ def phrase_to_prompt_en(value: str) -> str:
         ("목폴라", "turtleneck top"), ("폴라티", "turtleneck top"),
         ("양복", "business suit jacket"),
         ("집업조끼", "zip-up vest"), ("누빔조끼", "quilted vest"),
-        ("작업조끼", "work vest"),
+        ("패딩조끼", "puffer vest"), ("작업조끼", "work vest"), ("조끼", "vest"),
+        ("작업복", "workwear"),
         ("우비", "raincoat"), ("앞치마", "apron"),
         ("형광 안전조끼", "high-visibility safety vest"),
         ("안전조끼", "high-visibility safety vest"), ("배달조끼", "delivery vest"),
         ("군복 상의", "camouflage military top"), ("군복 바지", "camouflage military pants"),
         ("얼룩무늬", "camouflage-patterned"), ("레이스", "lace-trimmed"),
         ("민소매티", "sleeveless shirt"), ("민소매", "sleeveless shirt"),
-        ("줄무늬", "striped"), ("체크무늬", "check-patterned"),
+        ("긴팔 티셔츠", "long-sleeve T-shirt"), ("긴팔티", "long-sleeve T-shirt"),
+        ("긴팔 상의", "long-sleeve top"), ("긴팔", "long-sleeve"),
+        ("줄무늬", "striped"), ("체크무늬", "check-patterned"), ("체크", "check-patterned"),
         ("몸빼바지", "loose floral work pants"), ("몸빼 바지", "loose floral work pants"),
         ("니트", "knit sweater"),
         ("학교", "school uniform"),
@@ -464,6 +472,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("연한 초록색", "light green"), ("진한 초록색", "dark green"),
         ("검은색", "black"),
         ("검정색", "black"),
+        ("검정", "black"), ("흰", "white"),
         ("흰색", "white"),
         ("하얀색", "white"),
         ("연회색", "light gray"), ("진회색", "dark gray"), ("회색", "gray"),
@@ -496,7 +505,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("로고없는", "without a logo"),
         ("로고 없는", "without a logo"),
         ("반바지", "shorts"),
-        ("긴바지", "long pants"),
+        ("긴바지", "long pants"), ("긴 바지", "long pants"),
+        ("하의", "bottom garment"),
         ("바지", "pants"),
         ("크록스", "perforated foam clogs with heel straps"),
         ("슬리퍼", "slippers"),
@@ -528,7 +538,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("병원팔찌", "hospital wristband"), ("장바구니카트", "shopping trolley"),
         ("무선이어폰", "wireless earbuds"), ("등산스틱", "trekking poles"),
         ("비녀", "traditional Korean hairpin"), ("염주", "prayer beads"),
-        ("물통", "water bottle"),
+        ("물통", "water bottle"), ("텀블러", "tumbler bottle"),
         ("보행카트", "walking support cart"), ("학생증", "student ID card on a neck strap"),
         ("에어팟", "wireless earbuds"), ("귀마개", "earmuffs"),
         ("넥타이", "necktie"), ("서류봉투", "document envelope"),
@@ -556,9 +566,29 @@ def phrase_to_prompt_en(value: str) -> str:
         ("왼쪽 다리 절뚝거리는 보행", "a limp affecting the left leg"),
         ("오른쪽 다리 절뚝거리는 보행", "a limp affecting the right leg"),
         ("절뚝거리는 보행", "a visible limp while walking"),
+        ("턱선 길이", "chin-length hair"), ("웨이브", "wavy hair"),
+        ("뿔테", "thick-rimmed"), ("검정테", "black-framed"),
+        ("턱수염", "goatee beard"), ("문신", "tattoo"),
+        ("오른팔", "right arm"), ("왼팔", "left arm"),
+        ("왼쪽 눈 밑 점", "mole below the left eye"),
+        ("팔에 링거 바늘", "IV needle attached to the arm"),
+        ("형광", "high-visibility"), ("투명", "transparent"),
+        ("경량", "lightweight"), ("등산", "hiking"), ("2개", "a pair"),
+        ("몸빼", "loose floral work pants"), ("정장", "formal"),
+        ("곱슬머리", "curly hair"), ("반팔 티", "short-sleeve T-shirt"),
     ]
-    for source, target in replacements:
+    # Replace longer Korean terms first so a generic suffix such as 코트,
+    # 구두 or 치마 cannot corrupt 트렌치코트, 정장구두 or 한복치마.
+    for source, target in sorted(replacements, key=lambda pair: len(pair[0]), reverse=True):
         text = text.replace(source, target)
+    text = re.sub(r"(\d{4})년생", r"born in \1", text)
+    text = re.sub(r"(\d+)~(\d+)세", r"\1 to \2 years old", text)
+    text = re.sub(r"(\d+)세", r"\1 years old", text)
+    text = re.sub(r"(\d+)~(\d+)대", r"in their \1s to \2s", text)
+    text = re.sub(r"(\d+)대\s*후반", r"in their late \1s", text)
+    text = re.sub(r"(\d+)대\s*중반", r"in their mid \1s", text)
+    text = re.sub(r"(\d+)대\s*초반", r"in their early \1s", text)
+    text = re.sub(r"(\d+)대", r"in their \1s", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -1351,7 +1381,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.20")
+st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.21")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")

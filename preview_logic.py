@@ -259,7 +259,7 @@ def _explicit_special_features(text: str) -> list[str]:
     elif re.search(r"(?:모든|전체|전부)\s*단추(?:를)?\s*(?:잠가|잠근|채워|채운)", text):
         found.append("모든 단추를 잠근 상태")
     for match in re.finditer(
-        r"((?:왼쪽|오른쪽|왼|오른)?\s*(?:팔|손|다리|목|얼굴|눈\s*밑|볼|이마|턱)?\s*(?:문신|흉터|점))",
+        r"((?:왼쪽|오른쪽|왼|오른)?\s*(?:팔|손|다리|목|얼굴|눈\s*밑|볼|이마|턱)?\s*(?:문신|흉터|점(?!퍼)))",
         text,
     ):
         value = re.sub(r"\s+", " ", match.group(1)).strip()
