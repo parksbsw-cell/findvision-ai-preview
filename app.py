@@ -432,7 +432,8 @@ def phrase_to_prompt_en(value: str) -> str:
         ("플리츠스커트", "pleated skirt"), ("기모바지", "fleece-lined pants"),
         ("승마바지", "riding pants"), ("조거바지", "jogger pants"),
         ("치마바지", "culottes"), ("카고바지", "cargo pants"), ("통바지", "wide-leg pants"),
-        ("레인부츠", "rain boots"), ("꽃무늬 버선", "floral traditional socks"),
+        ("레인부츠", "rain boots"), ("털부츠", "fur-lined boots"),
+        ("꽃무늬 버선", "floral traditional socks"),
         ("버선", "traditional Korean socks"), ("맨발", "bare feet"),
         ("부츠", "boots"), ("구두", "dress shoes"), ("샌들", "sandals"),
         ("고무신", "traditional Korean rubber shoes"), ("장화", "rubber boots"),
@@ -444,7 +445,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("하이탑 운동화", "high-top sneakers"),
         ("앵클부츠", "ankle boots"), ("캔버스화", "canvas sneakers"),
         ("골프화", "golf shoes"), ("덧버선", "warm oversocks"),
-        ("덧신", "slip-on overshoes"), ("털부츠", "fur-lined boots"),
+        ("덧신", "slip-on overshoes"),
         ("정장구두", "formal dress shoes"), ("농구화", "basketball shoes"),
         ("방한화", "winter shoes"), ("쪼리", "flip-flops"),
         ("오토바이 헬멧", "motorcycle helmet"), ("안전모", "safety helmet"),
@@ -458,6 +459,9 @@ def phrase_to_prompt_en(value: str) -> str:
         ("고무장갑", "rubber gloves"), ("토시", "arm sleeves"),
         ("머리띠", "headband"), ("목도리", "scarf"), ("스카프", "scarf"),
         ("보행 보조기", "walking aid"), ("손수레", "handcart"),
+        ("연한 파란색", "light blue"), ("진한 파란색", "dark blue"),
+        ("연한 분홍색", "light pink"), ("진한 분홍색", "dark pink"),
+        ("연한 초록색", "light green"), ("진한 초록색", "dark green"),
         ("검은색", "black"),
         ("검정색", "black"),
         ("흰색", "white"),
@@ -654,12 +658,16 @@ def build_generation_prompt(
     prompt = (
         "Create one photorealistic full-body appearance reference of a fictional person. "
         "This is an illustration of described clothing and build, not an identified person's face. "
-        "Exactly one person, standing naturally in a straight front view. Keep the entire head, both "
+        "Exactly one person, standing naturally in a straight front view at eye level with a normal "
+        "documentary 50mm perspective. Use a plain identification-photo stance: arms relaxed and "
+        "separated from the torso, hands out of pockets, no crossed arms and no fashion pose. Keep the entire head, both "
         "hands, every carried item, legs and both shoes fully inside the frame with comfortable margins. "
         "Use realistic anatomy, natural proportions, sharp fabric texture, neutral documentary lighting, "
         "high detail, plain light studio background and contemporary clothing. Use an ordinary, natural, "
         "age-appropriate appearance rather than a fashion model or celebrity look. Keep a neutral "
-        "expression and realistic facial anatomy. "
+        "expression. Render a coherent age-appropriate human face with two naturally aligned eyes, "
+        "one nose, one closed mouth, realistic ears, jaw and skin texture. Avoid plastic or waxy skin, "
+        "facial warping, misplaced or duplicated eyes, fused features, exposed teeth and beauty retouching. "
         + origin_instruction +
         "Match only the stated appearance facts; unspecified details are illustrative. "
         "No extra person, extra limb, duplicate item, text, letters, logos, badges, emblems, watermark, "
@@ -837,6 +845,9 @@ Reject the image if:
 - specified hair or skin characteristics are wrong
 - the full body is not visible
 - hands, feet or required carried items are cropped, hidden or anatomically malformed
+- the face is visibly distorted or non-human, with misplaced/duplicated eyes, fused features or malformed ears/jaw
+- body proportions are visibly distorted, including an oversized head, elongated limbs or an impossible stance
+- the person uses a fashion/editorial pose, crosses their arms, or hides empty hands in pockets
 - more than one person, extra limbs or duplicated clothing/items appear
 - traditional, historical, ceremonial or fantasy clothing appears without being required
 - any text, calligraphy, letters, numbers, logo, sign, poster or watermark appears
@@ -1340,7 +1351,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.19")
+st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.20")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")

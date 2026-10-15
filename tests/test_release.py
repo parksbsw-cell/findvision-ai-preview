@@ -252,3 +252,28 @@ def test_layered_unbuttoned_school_shirt_prompt(monkeypatch):
     assert "white school uniform short-sleeve shirt" in prompt
     assert "fully unbuttoned" in prompt
     assert "outer shirt fully open" in prompt
+
+
+def test_prompt_translation_preserves_color_modifiers_and_fur_boots(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    from app import phrase_to_prompt_en
+
+    assert phrase_to_prompt_en("연한 파란색 니트") == "light blue knit sweater"
+    assert phrase_to_prompt_en("갈색 털부츠") == "brown fur-lined boots"
+
+
+def test_generation_prompt_requires_neutral_pose_and_realistic_face(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test")
+    from app import build_generation_prompt
+
+    prompt = build_generation_prompt({
+        "gender": "남성", "age": "18", "top": "검은색 반팔티",
+        "bottom": "검은색 바지", "shoes": "검은색 크록스",
+    }, "")
+    for requirement in (
+        "eye level", "50mm perspective", "hands out of pockets", "no crossed arms",
+        "no fashion pose", "naturally aligned eyes", "facial warping", "beauty retouching",
+    ):
+        assert requirement in prompt
