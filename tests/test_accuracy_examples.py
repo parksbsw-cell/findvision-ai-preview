@@ -220,3 +220,35 @@ def test_more_unseen_real_world_details(text, key, expected):
 def test_additional_field_report_vocabulary(text, key, expected):
     facts = enhance_features_from_text({}, text, "")
     assert expected in facts.get(key, "")
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("실종 남 76세 168센티 60킬로 검정잠바", "height", "168cm"),
+        ("실종 남 76세 168센티 60킬로 검정잠바", "weight", "60kg"),
+        ("여 83세, 빨강 상의, 검정 하의", "top", "빨간색 상의"),
+        ("남 14세, 검정 트레이닝바지, 흰 하이탑 운동화", "bottom", "트레이닝바지"),
+        ("남 14세, 검정 트레이닝바지, 흰 하이탑 운동화", "shoes", "하이탑 운동화"),
+        ("여 62세, 파란 체크무늬 원피스, 베이지 숄", "outerwear", "숄"),
+        ("남 71세, 남색 깔깔이, 회색 면바지", "outerwear", "깔깔이"),
+        ("여 78세, 꽃무늬 일바지, 자주색 조끼", "bottom", "일바지"),
+        ("남 39세, 주황색 조끼, 검정 방수바지, 헤드랜턴", "bottom", "방수바지"),
+        ("남 39세, 주황색 조끼, 검정 방수바지, 헤드랜턴", "accessories", "헤드랜턴"),
+        ("여 6세, 분홍 패딩조끼, 흰 타이즈", "outerwear", "패딩조끼"),
+        ("여 6세, 분홍 패딩조끼, 흰 타이즈", "bottom", "타이즈"),
+        ("남 80세, 회색 마고자, 흰 저고리", "outerwear", "마고자"),
+        ("남 80세, 회색 마고자, 흰 저고리", "top", "저고리"),
+        ("여 74세, 선글라스, 갈색 숄더백", "glasses", "선글라스"),
+        ("여 74세, 선글라스, 갈색 숄더백", "accessories", "숄더백"),
+    ],
+)
+def test_compact_units_and_less_common_garments(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")
+
+
+def test_shoulder_bag_is_not_misclassified_as_a_shawl():
+    facts = enhance_features_from_text({}, "여 74세, 선글라스, 갈색 숄더백", "")
+    assert facts["accessories"] == "갈색 숄더백"
+    assert not facts.get("outerwear")

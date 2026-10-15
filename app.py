@@ -401,17 +401,23 @@ def phrase_to_prompt_en(value: str) -> str:
         ("남방", "casual button-up shirt"), ("런닝셔츠", "sleeveless undershirt"),
         ("러닝셔츠", "sleeveless undershirt"), ("환자복", "hospital patient gown"),
         ("내복", "thermal underwear"), ("내의", "undershirt"),
+        ("저고리", "traditional Korean jeogori jacket"),
         ("등산복", "hiking top"), ("체육복", "athletic uniform"),
         ("생활복", "school casual uniform"), ("교복", "school uniform"),
         ("잠옷", "pajama top"), ("스웨터", "sweater"),
         ("후리스", "fleece jacket"), ("플리스", "fleece jacket"),
         ("카디건", "cardigan"), ("가디건", "cardigan"),
         ("항공 점퍼", "bomber jacket"), ("야상 점퍼", "field jacket"),
+        ("깔깔이", "quilted military liner jacket"), ("마고자", "traditional Korean magoja jacket"),
+        ("숄더백", "shoulder bag"), ("숄", "shawl"),
         ("롱패딩", "long puffer coat"), ("경량 패딩", "lightweight puffer jacket"),
         ("슬랙스", "slacks"), ("치마", "skirt"), ("레깅스", "leggings"),
         ("면바지", "cotton pants"), ("고무줄 바지", "elastic-waist pants"),
         ("등산 바지", "hiking pants"), ("작업 바지", "work pants"),
         ("멜빵 바지", "overalls"), ("칠부 바지", "cropped pants"), ("고쟁이", "loose pants"),
+        ("트레이닝바지", "track pants"), ("일바지", "work pants"),
+        ("방수바지", "waterproof pants"), ("잠옷바지", "pajama pants"),
+        ("타이즈", "tights"),
         ("치마바지", "culottes"), ("카고바지", "cargo pants"), ("통바지", "wide-leg pants"),
         ("레인부츠", "rain boots"), ("꽃무늬 버선", "floral traditional socks"),
         ("버선", "traditional Korean socks"), ("맨발", "bare feet"),
@@ -422,6 +428,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("스니커즈", "sneakers"), ("효도화", "elderly comfort shoes"),
         ("메리제인 구두", "Mary Jane shoes"), ("메리제인", "Mary Jane shoes"),
         ("전투화", "combat boots"), ("주름치마", "pleated skirt"),
+        ("하이탑 운동화", "high-top sneakers"),
         ("오토바이 헬멧", "motorcycle helmet"), ("안전모", "safety helmet"),
         ("헬멧", "helmet"), ("두건", "head scarf"), ("밀짚모자", "straw hat"),
         ("로퍼", "loafers"), ("워커", "lace-up combat boots"),
@@ -492,6 +499,7 @@ def phrase_to_prompt_en(value: str) -> str:
         ("보행기", "walking frame"),
         ("휠체어", "wheelchair"),
         ("마스크", "face mask"),
+        ("선글라스", "clearly visible sunglasses"), ("헤드랜턴", "headlamp"),
         ("보청기", "hearing aid"),
         ("귀걸이", "earrings"),
         ("반지", "ring"),
@@ -1299,7 +1307,7 @@ def generate_reference_result(features: dict, message: str, mode: str) -> dict:
 # =========================================================
 
 st.title("🔎 FindVision AI")
-st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.16")
+st.caption("인상착의를 이해하는 AI 참고 이미지 · 버전 2026.10.17")
 missing_cloudflare_settings = [
     name
     for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
