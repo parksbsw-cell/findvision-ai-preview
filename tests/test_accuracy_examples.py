@@ -195,3 +195,27 @@ def test_age_variants_used_in_alerts(text, expected):
 def test_more_unseen_real_world_details(text, key, expected):
     facts = enhance_features_from_text({}, text, "")
     assert expected in facts.get(key, "")
+
+
+@pytest.mark.parametrize(
+    "text,key,expected",
+    [
+        ("남 79세, 연회색 내복, 검정 털신, 파란 목도리", "top", "내복"),
+        ("남 79세, 연회색 내복, 검정 털신, 파란 목도리", "accessories", "목도리"),
+        ("여 67세, 빨간 몸빼바지, 꽃무늬 버선, 흰 두건", "shoes", "버선"),
+        ("여 67세, 빨간 몸빼바지, 꽃무늬 버선, 흰 두건", "hat_type", "두건"),
+        ("남 54세, 형광 안전조끼, 파란 작업복, 노란 안전모", "outerwear", "안전조끼"),
+        ("남 54세, 형광 안전조끼, 파란 작업복, 노란 안전모", "hat_type", "안전모"),
+        ("여 73세, 보라색 스카프, 갈색 핸드백, 검정 돋보기안경", "accessories", "스카프"),
+        ("여 73세, 보라색 스카프, 갈색 핸드백, 검정 돋보기안경", "glasses", "돋보기안경"),
+        ("남 82세, 환자복, 병원 슬리퍼, 팔에 링거 바늘", "top", "환자복"),
+        ("남 82세, 환자복, 병원 슬리퍼, 팔에 링거 바늘", "special_features", "링거"),
+        ("남 45세, 검정 오토바이 헬멧, 회색 배달조끼, 청바지", "hat_type", "헬멧"),
+        ("여 10세, 노란 레인부츠, 빨간 책가방, 양갈래 머리", "shoes", "레인부츠"),
+        ("남 68세, 흰 런닝셔츠, 남색 잠옷바지, 맨발", "top", "런닝셔츠"),
+        ("남 68세, 흰 런닝셔츠, 남색 잠옷바지, 맨발", "shoes", "맨발"),
+    ],
+)
+def test_additional_field_report_vocabulary(text, key, expected):
+    facts = enhance_features_from_text({}, text, "")
+    assert expected in facts.get(key, "")
