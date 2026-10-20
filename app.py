@@ -43,10 +43,8 @@ st.set_page_config(
 cookie_controller = CookieController()
 
 TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
-IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
-DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
-FAST_FALLBACK_MODEL = "@cf/black-forest-labs/flux-1-schnell"
-PHOTO_REALISM_FALLBACK_MODEL = "@cf/black-forest-labs/flux-2-dev"
+IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
+DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
 VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
 MAX_ATTEMPTS = 1
@@ -713,49 +711,26 @@ def build_generation_prompt(
 def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, str]:
     detailed = width >= DETAILED_WIDTH
     model = DETAILED_IMAGE_MODEL if detailed else IMAGE_MODEL
-    fields = {
-        "prompt": prompt,
-        "width": width,
-        "height": height,
-        "guidance": 5.0 if detailed else 4.0,
-    }
+    # Workers AI's FLUX.1 Schnell endpoint accepts prompt and steps as JSON.
+    # It is the only image model used so every generation mode follows the
+    # Apache-2.0 model license instead of switching to a non-commercial model.
     try:
-        result = cloudflare_multipart_request(model, fields)
-    except RuntimeError as primary_error:
-        primary_message = str(primary_error)
-        # A daily account allocation is shared by all models. Retrying another
-        # Cloudflare model cannot restore exhausted neurons and only adds delay.
-        daily_quota_exhausted = (
-            "10,000" in primary_message
-            and re.search(r"neuron|뉴런|daily free allocation|일일 무료 할당량", primary_message, re.I)
+        result = cloudflare_json_request(
+            model,
+            {"prompt": prompt[:2048], "steps": 8 if detailed else 4},
         )
-        if daily_quota_exhausted:
+    except RuntimeError as provider_error:
+        provider_message = str(provider_error)
+        if (
+            "10,000" in provider_message
+            and re.search(r"neuron|뉴런|daily free allocation|일일 무료 할당량", provider_message, re.I)
+        ):
             raise RuntimeError(
                 "Cloudflare 무료 이미지 생성량(하루 10,000 뉴런)을 모두 사용했습니다. "
-                "같은 계정의 다른 이미지 모델도 같은 할당량을 사용하므로 지금 재시도해도 생성되지 않습니다. "
                 "무료 할당량은 매일 00:00 UTC(한국 시간 오전 9시)에 초기화됩니다. "
                 "그때 다시 시도하거나 Cloudflare Workers 유료 요금제를 설정해 주세요."
-            ) from primary_error
-        if not re.search(r"HTTP 429|오류 코드 (?:4006|3040)", primary_message):
-            raise
-        try:
-            if detailed:
-                result = cloudflare_multipart_request(
-                    PHOTO_REALISM_FALLBACK_MODEL,
-                    {**fields, "guidance": 4.0, "steps": 28},
-                )
-            else:
-                # Keep the fast path fast even when Klein 4B is temporarily
-                # throttled. FLUX.1 Schnell is designed for four-step previews.
-                result = cloudflare_json_request(
-                    FAST_FALLBACK_MODEL,
-                    {"prompt": prompt[:2048], "steps": 4},
-                )
-        except RuntimeError as photo_error:
-            raise RuntimeError(
-                f"기본 이미지 AI와 실사 보조 모델 모두 요청을 처리하지 못했습니다. "
-                f"기본 응답: {primary_message} 보조 모델 응답: {photo_error}"
-            ) from photo_error
+            ) from provider_error
+        raise
 
     if not isinstance(result, dict) or not result.get("image"):
         raise RuntimeError("이미지 생성 결과를 받지 못했습니다.")
@@ -1610,7 +1585,7 @@ if features:
 
     mode = st.radio(
         "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
-        help="빠른 생성은 첫 이미지를 한 번 검수하고 오류가 있을 때만 빠르게 보정합니다. 정밀 생성은 더 큰 고해상도 이미지를 생성한 뒤 한 번 검수합니다.",
+        help="빠른 생성은 FLUX.1 Schnell을 4단계로 호출하고 첫 이미지를 검수합니다. 정밀 생성은 같은 모델을 8단계로 호출한 뒤 검수합니다. 이미지 크기는 모델 제공자 기본값을 사용합니다.",
     )
     source_changed = message.strip() != st.session_state.get("analysis_message", "")
     if source_changed:
@@ -1709,4 +1684,5 @@ if result:
     if st.button("다시 생성하기", type="primary", use_container_width=True):
         st.session_state["regenerate_requested"] = True
         st.rerun()
+
 
