@@ -79,7 +79,7 @@ def test_fast_preview_keeps_original_and_shows_outerwear(monkeypatch):
                     }
                 }
             )
-        if "flux-1-schnell" in url:
+        if "flux-2-klein-4b" in url or "flux-2-klein-9b" in url:
             return FakeResponse({"image": base64.b64encode(one_pixel_png).decode()})
         if "moondream" in url:
             return FakeResponse(
@@ -139,7 +139,7 @@ def test_image_provider_failure_shows_no_fake_image(monkeypatch):
                     "top": "검은색 반팔티", "bottom": "검은색 바지", "shoes": "검은색 크록스",
                 }}
             )
-        if "flux-1-schnell" in url:
+        if "flux-2-klein-4b" in url or "flux-2-klein-9b" in url:
             return FakeImageRateLimitResponse()
         raise AssertionError(f"Unexpected API: {url}")
 
@@ -171,7 +171,7 @@ def test_daily_neuron_quota_does_not_retry_same_account_fallback(monkeypatch):
                 "gender": "남성", "age": "18세", "height": "175cm",
                 "top": "검은색 반팔티", "bottom": "검은색 바지", "shoes": "검은색 운동화",
             }})
-        if "flux-1-schnell" in url:
+        if "flux-2-klein-4b" in url or "flux-2-klein-9b" in url:
             return FakeDailyQuotaResponse()
         raise AssertionError(f"Daily quota must stop retries: {url}")
 
@@ -189,7 +189,7 @@ def test_daily_neuron_quota_does_not_retry_same_account_fallback(monkeypatch):
 
 
 
-def test_fast_generation_uses_schnell_api_json(monkeypatch):
+def test_fast_generation_uses_original_klein_multipart_request(monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
     calls = []
@@ -207,8 +207,10 @@ def test_fast_generation_uses_schnell_api_json(monkeypatch):
                     "top": "검은색 반팔티", "bottom": "검은색 바지", "shoes": "검은색 크록스",
                 }}
             )
-        if "flux-1-schnell" in url:
-            assert kwargs["json"]["steps"] == 4
+        if "flux-2-klein-4b" in url:
+            assert kwargs["files"]["width"][1] == "512"
+            assert kwargs["files"]["height"][1] == "768"
+            assert kwargs["files"]["guidance"][1] == "4.0"
             return FakeResponse({"image": base64.b64encode(one_pixel_png).decode()})
         raise AssertionError(f"Unexpected API: {url}")
 
@@ -224,8 +226,8 @@ def test_fast_generation_uses_schnell_api_json(monkeypatch):
     assert len(app.image) == 1
     image_calls = [(url, kwargs) for url, kwargs in calls if "flux" in url]
     assert len(image_calls) == 1
-    assert "flux-1-schnell" in image_calls[0][0]
-    assert image_calls[0][1]["json"]["steps"] == 4
+    assert "flux-2-klein-4b" in image_calls[0][0]
+    assert image_calls[0][1]["files"]["prompt"][1]
 
 
 
@@ -256,8 +258,8 @@ def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypat
                     }
                 }
             )
-        if "flux-1-schnell" in url:
-            prompts["generation"] = kwargs["json"]["prompt"]
+        if "flux-2-klein-9b" in url:
+            prompts["generation"] = kwargs["files"]["prompt"][1]
             return FakeResponse({"image": base64.b64encode(one_pixel_png).decode()})
         if "moondream" in url:
             prompts["vision"] = kwargs["json"]["question"]
@@ -283,5 +285,4 @@ def test_unmentioned_outerwear_is_not_required_by_generation_or_vision(monkeypat
     assert "The stated outerwear must" not in prompts["generation"]
     assert "do not require a coat or jacket" in prompts["vision"]
     assert "required outerwear type/color/layer" not in prompts["vision"]
-
 

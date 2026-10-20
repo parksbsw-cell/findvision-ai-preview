@@ -43,16 +43,16 @@ st.set_page_config(
 cookie_controller = CookieController()
 
 TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
-IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
-DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
+IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
+DETAILED_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-9b"
 VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B"
 
 MAX_ATTEMPTS = 1
 FAST_ATTEMPTS = 2
 FAST_WIDTH = 512
 FAST_HEIGHT = 768
-DETAILED_WIDTH = 1024
-DETAILED_HEIGHT = 1344
+DETAILED_WIDTH = 896
+DETAILED_HEIGHT = 1152
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
@@ -711,14 +711,16 @@ def build_generation_prompt(
 def generate_image(prompt: str, width: int, height: int) -> tuple[bytes, str, str]:
     detailed = width >= DETAILED_WIDTH
     model = DETAILED_IMAGE_MODEL if detailed else IMAGE_MODEL
-    # Workers AI's FLUX.1 Schnell endpoint accepts prompt and steps as JSON.
-    # It is the only image model used so every generation mode follows the
-    # Apache-2.0 model license instead of switching to a non-commercial model.
+    fields = {
+        "prompt": prompt,
+        "width": width,
+        "height": height,
+        "guidance": 4.5 if detailed else 4.0,
+    }
     try:
-        result = cloudflare_json_request(
-            model,
-            {"prompt": prompt[:2048], "steps": 8 if detailed else 4},
-        )
+        # Restore the original FLUX.2 Klein multipart request, with the 4B
+        # model for fast output and 9B for the precise mode.
+        result = cloudflare_multipart_request(model, fields)
     except RuntimeError as provider_error:
         provider_message = str(provider_error)
         if (
@@ -1585,7 +1587,7 @@ if features:
 
     mode = st.radio(
         "생성 방식", ["빠른 생성", "정밀 생성"], horizontal=True,
-        help="빠른 생성은 FLUX.1 Schnell을 4단계로 호출하고 첫 이미지를 검수합니다. 정밀 생성은 같은 모델을 8단계로 호출한 뒤 검수합니다. 이미지 크기는 모델 제공자 기본값을 사용합니다.",
+        help="빠른 생성은 초기 방식인 FLUX.2 Klein 4B(512×768)를, 정밀 생성은 Klein 9B(896×1152)를 사용합니다. 생성 후 Vision AI가 이미지를 검수합니다.",
     )
     source_changed = message.strip() != st.session_state.get("analysis_message", "")
     if source_changed:
@@ -1684,5 +1686,4 @@ if result:
     if st.button("다시 생성하기", type="primary", use_container_width=True):
         st.session_state["regenerate_requested"] = True
         st.rerun()
-
 
