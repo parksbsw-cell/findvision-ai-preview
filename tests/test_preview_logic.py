@@ -1,5 +1,6 @@
 from preview_logic import (
     analysis_message,
+    calculate_visit_metrics,
     category_text,
     enhance_features_from_text,
     image_mime,
@@ -56,8 +57,8 @@ def test_vision_verdict_requires_score_and_real_boolean():
 
 
 def test_generated_image_format_is_detected():
-    assert image_mime(b"\x89PNG\r\n\x1a\nrest") == "image/png"
-    assert image_mime(b"\xff\xd8\xffrest") == "image/jpeg"
+    assert image_mime(b"\\x89PNG\\r\\n\\x1a\\nrest") == "image/png"
+    assert image_mime(b"\\xff\\xd8\\xffrest") == "image/jpeg"
 
 
 def test_short_realistic_alert_phrases_are_enough_for_image_generation():
@@ -77,9 +78,7 @@ def test_explicit_absence_of_glasses_is_preserved():
 
 def test_compact_alert_recovers_core_facts_and_default_image_inputs():
     recovered = enhance_features_from_text(
-        {},
-        "이름 구자운, 남,18세, 175CM,74KG, 검은색 반팔, 검은색 바지, 검은색 크록스, 안경",
-        "",
+        {}, "이름 구자운, 남,18세, 175CM,74KG, 검은색 반팔, 검은색 바지, 검은색 크록스, 안경", ""
     )
     assert recovered["name"] == "구자운"
     assert recovered["gender"] == "남성"
@@ -155,7 +154,7 @@ def test_body_type_accessories_and_shoe_brand_are_recovered():
 
 
 def test_model_cannot_copy_clothing_into_accessories():
-    original = "남성, 회색 캡모자, 빨간색 반팔티, 검은색 긴바지, 검은색 크록스"
+    original = "한국인 남성, 회색 캡모자, 빨간색 반팔티, 검은색 긴바지, 검은색 크록스"
     model = {"accessories": "회색 캡모자 빨간색 반팔티 검은색 긴바지 검은색 크록스"}
     assert enhance_features_from_text(model, original, "")["accessories"] == ""
 
@@ -256,6 +255,7 @@ def test_layered_shirts_and_open_buttons_are_preserved():
     assert recovered["top"] == "검은색 얇은 반팔티"
     assert recovered["outerwear"] == "흰색 학교 반팔 셔츠"
     assert recovered["special_features"] == "모든 단추를 푼 상태"
+
 
 def test_visit_metrics_count_the_entire_lifetime():
     metrics = calculate_visit_metrics(
