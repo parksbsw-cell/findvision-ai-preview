@@ -1034,23 +1034,37 @@ def fetch_analytics_summary() -> dict:
 
 
 def record_public_visit() -> None:
-    """Record one anonymous visit for the current browser session."""
+    """Record exactly one idempotent visit for this browser session."""
     if st.session_state.get("public_visit_recorded"):
         return
-    saved = log_analytics_event(
-        get_anonymous_user_id(),
-        "image_generated",
-        event_id=str(uuid.uuid4()),
-        verification_pass=False,
-        verification_score=0,
-        attempts=1,
-        mode="빠른 생성",
-        first_image_seconds=0,
-        total_seconds=0,
-    )
-    if not saved:
-        saved = record_local_visit(get_anonymous_user_id())
-    st.session_state["public_visit_database_saved"] = bool(saved)
+
+    event_id = st.session_state.setdefault("public_visit_event_id", str(uuid.uuid4()))
+    user_id = get_anonymous_user_id()
+
+    if analytics_enabled():
+        try:
+            # Import earlier local visits once, preserving their original IDs
+            # and timestamps so deployment does not silently discard history.
+            if not st.session_state.get("public_visits_migrated"):
+                migrate_local_visits_to_supabase()
+                st.session_state["public_visits_migrated"] = True
+            saved = log_public_visit(user_id, event_id)
+        except Exception:
+            saved = False
+        st.session_state["public_visit_database_saved"] = saved
+        if saved:
+            st.session_state["public_visit_recorded"] = True
+            st.session_state.pop("public_visit_database_error", None)
+        else:
+            st.session_state["public_visit_database_error"] = (
+                "방문 DB 저장을 완료하지 못했습니다. 연결을 확인한 뒤 다시 시도합니다."
+            )
+        return
+
+    # Keep the old visible counters while the permanent database is not yet
+    # configured. This local fallback is not durable across server rebuilds.
+    saved = record_local_visit(user_id, event_id)
+    st.session_state["public_visit_database_saved"] = saved
     if saved:
         st.session_state["public_visit_recorded"] = True
 
@@ -1068,12 +1082,12 @@ def local_analytics_connection():
     return connection
 
 
-def record_local_visit(user_id: str) -> bool:
+def record_local_visit(user_id: str, event_id: str | None = None) -> bool:
     try:
         with local_analytics_connection() as connection:
             connection.execute(
-                "INSERT INTO public_visits(event_id, user_id, created_at) VALUES (?, ?, ?)",
-                (str(uuid.uuid4()), user_id, datetime.now(timezone.utc).isoformat()),
+                "INSERT OR IGNORE INTO public_visits(event_id, user_id, created_at) VALUES (?, ?, ?)",
+                (event_id or str(uuid.uuid4()), user_id, datetime.now(timezone.utc).isoformat()),
             )
         return True
     except sqlite3.Error:
@@ -1089,6 +1103,59 @@ def fetch_local_visits() -> list[dict]:
         {"event_id": event_id, "user_id": user_id, "created_at": created_at}
         for event_id, user_id, created_at in rows
     ]
+
+
+def migrate_local_visits_to_supabase() -> None:
+    """Copy legacy temporary rows to the durable table, idempotently."""
+    rows = fetch_local_visits()
+    endpoint = get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/cluesight_visits"
+    for offset in range(0, len(rows), 250):
+        batch = rows[offset:offset + 250]
+        response = requests.post(
+            endpoint,
+            headers={**supabase_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+            params={"on_conflict": "event_id"},
+            json=batch,
+            timeout=15,
+        )
+        response.raise_for_status()
+
+
+def log_public_visit(user_id: str, event_id: str) -> bool:
+    if not analytics_enabled():
+        return False
+    try:
+        response = requests.post(
+            get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/cluesight_visits",
+            headers={**supabase_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+            params={"on_conflict": "event_id"},
+            json={"event_id": event_id, "user_id": user_id},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+
+def fetch_public_visit_summary() -> dict:
+    response = requests.post(
+        get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/rpc/cluesight_visit_summary",
+        headers=supabase_headers(),
+        json={},
+        timeout=10,
+    )
+    response.raise_for_status()
+    result = response.json()
+    required = {"total_users", "total_visits", "returning_users", "retention"}
+    if not isinstance(result, dict) or not required.issubset(result):
+        raise ValueError("Invalid lifetime visit summary")
+    return {
+        "total_users": int(result["total_users"]),
+        "total_visits": int(result["total_visits"]),
+        "returning_users": int(result["returning_users"]),
+        "retention": float(result["retention"]),
+    }
 
 
 def fetch_public_visits() -> list[dict]:
@@ -1132,11 +1199,28 @@ def calculate_visit_metrics(rows: list[dict]) -> dict:
 
 
 def show_public_retention_metrics() -> None:
-    try:
-        rows = fetch_public_visits() if analytics_enabled() else fetch_local_visits()
-        metrics = calculate_visit_metrics(rows)
-    except Exception:
+    source_label = "임시 서버 저장소"
+    status_message = ""
+    if analytics_enabled():
+        try:
+            metrics = fetch_public_visit_summary()
+            st.session_state["public_retention_metrics_cache"] = metrics
+            source_label = "영구 방문 DB · 전체 누적"
+        except Exception:
+            metrics = st.session_state.get("public_retention_metrics_cache")
+            if metrics is None:
+                metrics = calculate_visit_metrics(fetch_local_visits())
+            status_message = (
+                "영구 방문 DB를 읽지 못해 현재 서버 임시 저장값을 표시합니다. "
+                "Supabase에서 supabase_setup.sql이 실행됐는지 확인해 주세요."
+            )
+    else:
         metrics = calculate_visit_metrics(fetch_local_visits())
+        status_message = (
+            "현재는 서버 임시 저장소를 사용 중입니다. Supabase DB 설정 후에는 "
+            "앱 재시작·재배포 뒤에도 전체 방문 기록이 유지됩니다."
+        )
+
     total_users = int(metrics.get("total_users", 0) or 0)
     total_visits = int(metrics.get("total_visits", 0) or 0)
     returning_users = int(metrics.get("returning_users", 0) or 0)
@@ -1146,7 +1230,11 @@ def show_public_retention_metrics() -> None:
     second.metric("전체 방문 횟수", f"{total_visits}회")
     third.metric("재방문자", f"{returning_users}명")
     fourth.metric("리텐션", f"{retention:.1f}%")
-    st.caption("익명 브라우저 기준 · 같은 브라우저의 새 접속 세션마다 방문 1회로 기록합니다.")
+    st.caption(f"익명 브라우저 기준 · {source_label} · 새 접속 세션마다 방문 1회 기록")
+    if status_message:
+        st.warning(status_message)
+    if st.session_state.get("public_visit_database_error"):
+        st.warning(st.session_state["public_visit_database_error"])
 
 
 def parse_created_at(value: str):
