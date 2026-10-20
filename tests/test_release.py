@@ -109,17 +109,18 @@ def test_precise_attempt_limits_and_partial_result(monkeypatch, vision_error, fa
 
 def test_analytics_is_private_and_emitted_once_per_result(monkeypatch):
     app, calls = setup_app(monkeypatch, analytics=True)
+    visits = [(u, k) for u, k in calls if "cluesight_visits" in u]
     events = [(u, k) for u, k in calls if "cluesight_events" in u]
-    assert len(events) == 2  # one anonymous visit plus one completed image
-    payload = next(event[1]["json"] for event in events if event[1]["json"]["total_seconds"] != 0)
+    assert len(visits) == 1  # one shared-ledger browser visit
+    assert len(events) == 1  # one completed image generation
+    payload = events[0][1]["json"]
     assert payload["attempts"] == 1
     assert payload["total_seconds"] >= payload["first_image_seconds"] >= 0
     assert not {"message", "image", "name", "last_seen_location"} & payload.keys()
-    assert "Authorization" not in events[0][1]["headers"]
+    assert "Authorization" not in visits[0][1]["headers"]
     app.run()
-    assert sum("cluesight_events" in u for u, _ in calls) == 2
-
-
+    assert sum("cluesight_events" in u for u, _ in calls) == 1
+    assert sum("cluesight_visits" in u for u, _ in calls) == 1
 def test_explicit_brand_and_region_override_model_hallucination():
     facts = enhance_features_from_text({"shoes_brand": "Nike", "alert_area": "서울역"},
                                       "검은색 나이키 반팔티, 흰색 운동화, 마지막 목격 위치 서울역", "")
