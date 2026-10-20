@@ -70,7 +70,7 @@ where event_type = 'image_generated'
 on conflict (event_id) do nothing;
 
 create or replace function public.cluesight_visit_summary()
-returns jsonb language sql stable security invoker set search_path = '' as $
+returns jsonb language sql stable security invoker set search_path = '' as $$
 with per_browser as (
     select user_id, count(*) as visit_count
     from public.cluesight_visits
