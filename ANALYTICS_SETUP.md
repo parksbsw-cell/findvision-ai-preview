@@ -28,6 +28,6 @@ ADMIN_PASSWORD = "YOUR_PRIVATE_ADMIN_PASSWORD"
 누적 집계는 SQL에서 수행하므로 10,000건 제한이 없습니다. RLS를 켜고 anon/authenticated
 역할의 읽기·쓰기·집계 함수 실행을 차단합니다. 저장 장애는 이미지 기능을 중단시키지 않고
 해당 결과에 저장 실패를 표시합니다. 설정 이전 사용량은 소급 복원할 수 없습니다.
-방문 통계도 같은 Supabase 연결을 사용합니다. 연결 정보가 없거나 DB 저장에 실패하면 앱은 방문 수를 임시 저장소로 가장하지 않고 저장 실패 안내를 표시합니다. Streamlit 앱 Secrets에 Supabase 서버 키를 등록해야 배포·재시작 후에도 누적 방문 기록이 유지됩니다. 끄려면 CLUESIGHT_ANALYTICS_ENABLED를 "false"로 변경합니다.
+방문 통계도 같은 Supabase 연결을 사용합니다. Supabase가 연결되지 않으면 기존 동작처럼 Streamlit 서버의 임시 SQLite 저장소로 기록해 네 가지 지표를 계속 표시합니다. 이 임시 기록은 앱 서버가 재시작되거나 재배포되면 초기화될 수 있습니다. 재배포 후에도 누적 방문 기록을 유지하려면 Streamlit 앱 Secrets에 Supabase 서버 키를 등록해야 합니다. 끄려면 CLUESIGHT_ANALYTICS_ENABLED를 "false"로 변경합니다.
 
 참고: https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys
