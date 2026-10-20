@@ -256,3 +256,19 @@ def test_layered_shirts_and_open_buttons_are_preserved():
     assert recovered["top"] == "검은색 얇은 반팔티"
     assert recovered["outerwear"] == "흰색 학교 반팔 셔츠"
     assert recovered["special_features"] == "모든 단추를 푼 상태"
+
+def test_visit_metrics_count_the_entire_lifetime():
+    metrics = calculate_visit_metrics(
+        [
+            {"user_id": "browser-a", "created_at": "2024-01-01T00:00:00Z"},
+            {"user_id": "browser-a", "created_at": "2026-10-20T00:00:00Z"},
+            {"user_id": "browser-b", "created_at": "2026-10-20T01:00:00Z"},
+        ]
+    )
+
+    assert metrics == {
+        "total_users": 2,
+        "total_visits": 3,
+        "returning_users": 1,
+        "retention": 50.0,
+    }
