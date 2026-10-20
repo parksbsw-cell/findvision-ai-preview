@@ -89,7 +89,7 @@ select jsonb_build_object(
         then 100.0 * returning_users / total_users else 0.0 end
 )
 from totals;
-$;
+$$;
 revoke all on function public.cluesight_visit_summary() from public, anon, authenticated;
 grant execute on function public.cluesight_visit_summary() to service_role;
 
