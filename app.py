@@ -1105,35 +1105,42 @@ def calculate_visit_metrics(rows: list[dict]) -> dict:
 
 
 def show_public_retention_metrics() -> None:
+    metrics = None
+    status_message = ""
+
     if not analytics_enabled():
-        st.warning(
-            "방문 통계 DB가 연결되지 않아 방문 기록을 장기간 저장할 수 없습니다. "
-            "Streamlit 앱 Secrets에 Supabase URL과 서버 전용 Secret Key를 설정해 주세요."
+        status_message = (
+            "방문 통계 DB가 연결되지 않았습니다. Supabase URL과 서버 전용 Secret Key를 "
+            "Streamlit 앱 Secrets에 설정하면 누적 방문 기록이 저장됩니다."
         )
-        return
+    else:
+        try:
+            metrics = calculate_visit_metrics(fetch_public_visits())
+            st.session_state["public_retention_metrics_cache"] = metrics
+        except Exception:
+            metrics = st.session_state.get("public_retention_metrics_cache")
+            status_message = (
+                "방문 통계 DB에 연결하지 못했습니다. 표시된 값은 현재 세션의 마지막 조회값이며, "
+                "연결이 복구되면 방문 기록 저장을 다시 시도합니다."
+            )
 
-    try:
-        rows = fetch_public_visits()
-        metrics = calculate_visit_metrics(rows)
-    except Exception:
-        st.warning(
-            "방문 통계 DB에 연결하지 못했습니다. 이번 방문은 아직 저장되지 않았으며, "
-            "연결이 복구되면 현재 브라우저 세션에서 다시 저장을 시도합니다."
-        )
-        return
-
-    total_users = int(metrics.get("total_users", 0) or 0)
-    total_visits = int(metrics.get("total_visits", 0) or 0)
-    returning_users = int(metrics.get("returning_users", 0) or 0)
-    retention = float(metrics.get("retention", 0.0) or 0.0)
     first, second, third, fourth = st.columns(4)
-    first.metric("누적 방문자", f"{total_users}명")
-    second.metric("전체 방문 횟수", f"{total_visits}회")
-    third.metric("재방문자", f"{returning_users}명")
-    fourth.metric("리텐션", f"{retention:.1f}%")
-    st.caption("익명 브라우저 기준 · 같은 브라우저의 새 접속 세션마다 방문 1회로 기록합니다.")
+    if metrics is None:
+        unavailable = "DB 연결 필요"
+        first.metric("누적 방문자", unavailable)
+        second.metric("전체 방문 횟수", unavailable)
+        third.metric("재방문자", unavailable)
+        fourth.metric("리텐션", unavailable)
+    else:
+        first.metric("누적 방문자", f"{int(metrics.get('total_users', 0) or 0)}명")
+        second.metric("전체 방문 횟수", f"{int(metrics.get('total_visits', 0) or 0)}회")
+        third.metric("재방문자", f"{int(metrics.get('returning_users', 0) or 0)}명")
+        fourth.metric("리텐션", f"{float(metrics.get('retention', 0.0) or 0.0):.1f}%")
+        st.caption("익명 브라우저 기준 · 같은 브라우저의 새 접속 세션마다 방문 1회로 기록합니다.")
 
-    if not st.session_state.get("public_visit_database_saved", False):
+    if status_message:
+        st.warning(status_message)
+    elif not st.session_state.get("public_visit_database_saved", False):
         error = st.session_state.get("public_visit_database_error")
         if error:
             st.warning(error)
