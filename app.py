@@ -367,6 +367,51 @@ def phrase_to_prompt_en(value: str) -> str:
         ("파마머리", "permed hair"), ("파마", "permed hair"),
         ("양갈래머리", "two pigtails"), ("양갈래", "two pigtails"),
         ("커트머리", "short cropped haircut"), ("대머리", "bald head"),
+        ("아이비리그컷", "Ivy League haircut with short tapered sides"),
+        ("리젠트컷", "short regent haircut with a lifted front"),
+        ("크롭컷", "short textured crop haircut"),
+        ("쉼표머리", "comma hair with a curved fringe"),
+        ("가르마머리", "side-parted hairstyle"),
+        ("올림머리", "hair pinned up"), ("똥머리", "hair in a bun"),
+        ("반곱슬", "naturally wavy, slightly curly hair"),
+        ("백금발", "platinum blonde hair"), ("금발", "blonde hair"),
+        ("은발", "silver hair"),
+        ("오른쪽 팔에 문신", "tattoo on the right arm"),
+        ("왼쪽 팔에 문신", "tattoo on the left arm"),
+        ("오른쪽 팔에 흉터", "scar on the right arm"),
+        ("왼쪽 팔에 흉터", "scar on the left arm"),
+        ("눈 밑에 큰 점", "large mole below the eye"),
+        ("왼쪽 눈 밑에 점", "mole below the left eye"),
+        ("오른쪽 눈 밑에 점", "mole below the right eye"),
+        ("왼쪽 귀 피어싱", "piercing on the left ear"),
+        ("오른쪽 귀 피어싱", "piercing on the right ear"),
+        ("오른쪽 발목 깁스", "cast on the right ankle"),
+        ("왼쪽 발목 깁스", "cast on the left ankle"),
+        ("오른쪽 다리 깁스", "cast on the right leg"),
+        ("왼쪽 다리 깁스", "cast on the left leg"),
+        ("오른쪽 팔 깁스", "cast on the right arm"),
+        ("왼쪽 팔 깁스", "cast on the left arm"),
+        ("발목 깁스", "cast on the ankle"), ("다리 깁스", "cast on the leg"),
+        ("팔 깁스", "cast on the arm"), ("손목 깁스", "cast on the wrist"),
+        ("발목 보호대", "ankle brace"), ("무릎 보호대", "knee brace"),
+        ("손목 보호대", "wrist brace"), ("팔 보호대", "arm brace"),
+        ("깁스", "cast"),
+        ("살짝 그을린 피부톤", "slightly tanned skin tone"),
+        ("약간 그을린 피부톤", "slightly tanned skin tone"),
+        ("그을린 피부톤", "sun-tanned skin tone"),
+        ("구릿빛 피부톤", "subtle warm bronze skin tone"),
+        ("살짝 어두운 피부톤", "slightly deeper, naturally brown skin tone"),
+        ("어두운 피부톤", "medium-deep natural skin tone"),
+        ("짙은 피부톤", "deep natural skin tone"),
+        ("밝은 피부톤", "fair natural skin tone"),
+        ("보통 피부톤", "medium natural skin tone"),
+        ("상의 미착용", "no shirt or upper-body garment, non-sexual neutral presentation"),
+        ("양말만 착용", "wearing socks only, with no shoes"),
+        ("왼쪽 귀 피어싱", "piercing on the left ear"),
+        ("오른쪽 귀 피어싱", "piercing on the right ear"),
+        ("귀 피어싱", "ear piercing"),
+        ("청자켓", "denim jacket"), ("청 재킷", "denim jacket"),
+        ("데님 자켓", "denim jacket"), ("브이넥", "V-neck"),
         ("백발", "white hair"), ("흰머리", "white hair"), ("새치", "partially gray hair"),
         ("희끗희끗한 머리", "salt-and-pepper gray hair"), ("웨이브머리", "wavy hair"),
         ("고도 비만", "very heavy build"), ("고도비만", "very heavy build"),
@@ -665,8 +710,11 @@ def build_generation_prompt(
         if nationality else
         "No nationality was stated; use the service default and depict the fictional person as Korean. "
     )
-    layers = ("Wear the stated outerwear over the inner top. A closed outer layer may hide the top."
-              if features.get("outerwear") else "No outerwear is specified; do not add a coat or jacket.")
+    outerwear = str(features.get("outerwear", "") or "").strip()
+    outerwear_absent = outerwear in {"없음", "미착용", "외투 없음"}
+    layers = ("No outerwear is specified; do not add a coat or jacket."
+              if not outerwear or outerwear_absent else
+              "Wear the stated outerwear over the inner top. A closed outer layer may hide the top.")
     haircut = (
         "The stated haircut is mandatory and must not be replaced with a center-parted hairstyle. "
         if features.get("hair_style") else ""
@@ -678,6 +726,17 @@ def build_generation_prompt(
         "No possession or accessory was specified. Keep both hands empty and visible at the sides. "
         "Do not add any bag, backpack, handbag, tote, pouch, phone, umbrella, cane, watch or jewelry. "
     )
+    explicit_absences = []
+    if str(features.get("glasses", "") or "").strip() in {"없음", "미착용", "안경 없음"}:
+        explicit_absences.append("The person wears no glasses or sunglasses.")
+    if str(features.get("shoes", "") or "").strip() == "맨발":
+        explicit_absences.append("The person is barefoot; do not add shoes or socks.")
+    if str(features.get("top", "") or "").strip() == "상의 미착용":
+        explicit_absences.append("No shirt or upper-body garment; keep the depiction non-sexual, neutral, and age-appropriate.")
+    if outerwear_absent:
+        explicit_absences.append("Do not add a coat, jacket, hoodie, or other outerwear.")
+    if str(features.get("hat_type", "") or "").strip() in {"없음", "미착용"}:
+        explicit_absences.append("The person wears no hat or head covering.")
     button_state = (
         "The stated button/closure state is mandatory. Keep the outer shirt fully open so the inner "
         "top remains clearly visible. "
@@ -701,7 +760,8 @@ def build_generation_prompt(
         "Match only the stated appearance facts; unspecified details are illustrative. "
         "No extra person, extra limb, duplicate item, text, letters, logos, badges, emblems, watermark, "
         "jewelry, collar, pocket decoration or prop unless explicitly stated. "
-        + layers + " " + button_state + haircut + possessions + "\n" + description
+        + layers + " " + button_state + haircut + possessions + " "
+        + " ".join(explicit_absences) + "\n" + description
     )
     if correction:
         prompt += "\nCorrect these visible mismatches only: " + correction[:800]
