@@ -660,6 +660,24 @@ def missing_recommended(features: dict[str, Any]) -> list[str]:
     return missing
 
 
+def calculate_visit_metrics(rows: list[dict]) -> dict:
+    """Calculate lifetime counts from all visit rows, without date cutoffs."""
+    visit_counts: dict[str, int] = {}
+    for row in rows:
+        user_id = str(row.get("user_id") or "").strip()
+        if user_id:
+            visit_counts[user_id] = visit_counts.get(user_id, 0) + 1
+    total_users = len(visit_counts)
+    returning_users = sum(count >= 2 for count in visit_counts.values())
+    total_visits = sum(visit_counts.values())
+    return {
+        "total_users": total_users,
+        "total_visits": total_visits,
+        "returning_users": returning_users,
+        "retention": 100.0 * returning_users / total_users if total_users else 0.0,
+    }
+
+
 def safe_count(value: Any) -> int:
     try:
         count = int(value)
