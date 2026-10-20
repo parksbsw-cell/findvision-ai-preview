@@ -57,10 +57,8 @@ def test_vision_verdict_requires_score_and_real_boolean():
 
 
 def test_generated_image_format_is_detected():
-    assert image_mime(b"\\x89PNG\\r\\n\\x1a\\nrest") == "image/png"
-    assert image_mime(b"\\xff\\xd8\\xffrest") == "image/jpeg"
-
-
+    assert image_mime(bytes.fromhex("89504e470d0a1a0a") + b"rest") == "image/png"
+    assert image_mime(bytes.fromhex("ffd8ff") + b"rest") == "image/jpeg"
 def test_short_realistic_alert_phrases_are_enough_for_image_generation():
     original = "가상 테스트: 18세 남성, 175cm, 74kg, 검은색 반팔, 검은색 바지, 검은색 크록스, 안경"
     recovered = enhance_features_from_text({}, original, "")
