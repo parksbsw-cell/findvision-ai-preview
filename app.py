@@ -1272,7 +1272,18 @@ def parse_created_at(value: str):
 
 
 def calculate_analytics(rows: list) -> dict:
-    generations = [row for row in rows if row.get("event_type") == "image_generated"]
+    generations = [
+        row for row in rows
+        if row.get("event_type") == "image_generated"
+        and not (
+            row.get("verification_pass") is False
+            and row.get("verification_score") == 0
+            and row.get("attempts") == 1
+            and row.get("mode") == "빠른 생성"
+            and row.get("first_image_seconds") == 0
+            and row.get("total_seconds") == 0
+        )
+    ]
 
     now = datetime.now(timezone.utc)
     seven_days_ago = now - timedelta(days=7)
