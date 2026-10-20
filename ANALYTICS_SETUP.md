@@ -16,8 +16,7 @@ ADMIN_PASSWORD = "YOUR_PRIVATE_ADMIN_PASSWORD"
 서버 전용 sb_secret_… 또는 legacy service_role 키를 사용합니다. anon/publishable 키는
 사용하지 않습니다. 일반 SUPABASE_KEY는 다른 환경에 잘못 연결하지 않도록 읽지 않습니다.
 
-3. 이미지 생성 후 관리자 통계를 열어 총 완료 수가 1 증가하는지 확인합니다.
-   단순 화면 재실행은 중복 저장되지 않아야 합니다.
+3. 앱을 열어 상단 방문 통계가 표시되는지 확인합니다. 새 브라우저 접속 세션마다 전체 방문 횟수가 1 증가하고, 이미지 생성은 방문 수에 포함되지 않습니다. 같은 Streamlit 세션의 화면 재실행은 중복 기록되지 않습니다. 관리자 통계에서 이미지 생성 수는 별도로 확인합니다.
 4. 다른 브라우저의 생성은 생성 브라우저 수를 늘립니다. 다른 한국 날짜에 다시 생성하면
    재방문 수가 늘어납니다. 연결 실패 시 0으로 가장하지 않고 오류를 표시합니다.
 
@@ -29,6 +28,6 @@ ADMIN_PASSWORD = "YOUR_PRIVATE_ADMIN_PASSWORD"
 누적 집계는 SQL에서 수행하므로 10,000건 제한이 없습니다. RLS를 켜고 anon/authenticated
 역할의 읽기·쓰기·집계 함수 실행을 차단합니다. 저장 장애는 이미지 기능을 중단시키지 않고
 해당 결과에 저장 실패를 표시합니다. 설정 이전 사용량은 소급 복원할 수 없습니다.
-끄려면 CLUESIGHT_ANALYTICS_ENABLED를 "false"로 변경합니다.
+방문 통계도 같은 Supabase 연결을 사용합니다. 연결 정보가 없거나 DB 저장에 실패하면 앱은 방문 수를 임시 저장소로 가장하지 않고 저장 실패 안내를 표시합니다. Streamlit 앱 Secrets에 Supabase 서버 키를 등록해야 배포·재시작 후에도 누적 방문 기록이 유지됩니다. 끄려면 CLUESIGHT_ANALYTICS_ENABLED를 "false"로 변경합니다.
 
 참고: https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys
