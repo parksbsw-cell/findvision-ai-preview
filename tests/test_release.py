@@ -88,7 +88,7 @@ def test_retry_survives_reruns_without_duplicate_count(monkeypatch):
     assert not app.exception
     assert app.metric[0].value == "2회"
     assert len(calls) == 5  # regeneration reuses the reviewed fields without reanalysis
-    prompt = next(k["files"]["prompt"][1] for u, k in calls if "flux" in u)
+    prompt = next(k["json"]["prompt"] for u, k in calls if "flux" in u)
     assert "서울역" not in prompt and "Seoul Station" not in prompt
     assert "two-block" in prompt and "jeans" in prompt
 
@@ -102,9 +102,8 @@ def test_precise_attempt_limits_and_partial_result(monkeypatch, vision_error, fa
     assert app.session_state["last_result"]["best"]["image"] == base64.b64decode(PNG)
     assert "never-display-this-secret" not in str(app.error)
     image_call = next(k for u, k in calls if "flux" in u)
-    assert image_call["files"]["width"][1] == "1024"
-    assert image_call["files"]["height"][1] == "1344"
-    assert "flux-2-klein-9b" in next(u for u, _ in calls if "flux" in u)
+    assert image_call["json"]["steps"] == 8
+    assert "flux-1-schnell" in next(u for u, _ in calls if "flux" in u)
 
 
 def test_analytics_is_private_and_emitted_once_per_result(monkeypatch):
@@ -314,3 +313,4 @@ def test_jumper_is_not_misread_as_a_mole():
     facts = enhance_features_from_text({}, "실종자 남성, 만 78세, 회색 점퍼", "")
     assert facts["outerwear"] == "회색 점퍼"
     assert not facts.get("special_features")
+
