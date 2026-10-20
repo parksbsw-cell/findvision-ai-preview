@@ -4,8 +4,6 @@ import hmac
 import json
 import os
 import re
-import sqlite3
-import tempfile
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -57,7 +55,6 @@ DETAILED_HEIGHT = 1344
 GENERATION_LIMIT = 5
 GENERATION_WINDOW_SECONDS = 60 * 60
 GENERATION_COOLDOWN_SECONDS = 10
-LOCAL_ANALYTICS_DB = os.path.join(tempfile.gettempdir(), "findvision_ai_visits_v3.sqlite3")
 
 EDITABLE_FIELDS = [
     "gender", "age", "height", "weight", "body_type", "nationality", "skin_tone",
@@ -1034,17 +1031,24 @@ def fetch_analytics_summary() -> dict:
 
 
 def record_public_visit() -> None:
-    """Record one anonymous visit for the current browser session."""
+    """Record one anonymous visit per browser session in persistent Supabase storage."""
     if st.session_state.get("public_visit_recorded"):
         return
-    # The deployed database originally allowed only image_generated rows.
-    # This otherwise-impossible combination is reserved for anonymous visits,
-    # so the existing production schema can record visits without storing any
-    # message, name, location, image, or IP address.
+
+    # Keep the same event ID while retrying this session. Supabase's unique
+    # event_id makes a rerun safe if the server saved the request but its
+    # response was lost.
+    event_id = st.session_state.setdefault("public_visit_event_id", str(uuid.uuid4()))
+    user_id = get_anonymous_user_id()
+    if not analytics_enabled():
+        st.session_state["public_visit_database_saved"] = False
+        st.session_state["public_visit_database_error"] = "Supabase 방문 통계 연결이 설정되지 않았습니다."
+        return
+
     saved = log_analytics_event(
-        get_anonymous_user_id(),
+        user_id,
         "image_generated",
-        event_id=str(uuid.uuid4()),
+        event_id=event_id,
         verification_pass=False,
         verification_score=0,
         attempts=1,
@@ -1052,46 +1056,12 @@ def record_public_visit() -> None:
         first_image_seconds=0,
         total_seconds=0,
     )
-    if not saved:
-        saved = record_local_visit(get_anonymous_user_id())
+    st.session_state["public_visit_database_saved"] = saved
     if saved:
         st.session_state["public_visit_recorded"] = True
-
-
-def local_analytics_connection():
-    connection = sqlite3.connect(LOCAL_ANALYTICS_DB, timeout=10)
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute(
-        """CREATE TABLE IF NOT EXISTS public_visits (
-        event_id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        created_at TEXT NOT NULL
-        )"""
-    )
-    return connection
-
-
-def record_local_visit(user_id: str) -> bool:
-    try:
-        with local_analytics_connection() as connection:
-            connection.execute(
-                "INSERT INTO public_visits(event_id, user_id, created_at) VALUES (?, ?, ?)",
-                (str(uuid.uuid4()), user_id, datetime.now(timezone.utc).isoformat()),
-            )
-        return True
-    except sqlite3.Error:
-        return False
-
-
-def fetch_local_visits() -> list[dict]:
-    with local_analytics_connection() as connection:
-        rows = connection.execute(
-            "SELECT event_id, user_id, created_at FROM public_visits ORDER BY created_at"
-        ).fetchall()
-    return [
-        {"event_id": event_id, "user_id": user_id, "created_at": created_at}
-        for event_id, user_id, created_at in rows
-    ]
+        st.session_state.pop("public_visit_database_error", None)
+    else:
+        st.session_state["public_visit_database_error"] = "Supabase에 방문 기록을 저장하지 못했습니다."
 
 
 def fetch_public_visits() -> list[dict]:
@@ -1135,11 +1105,23 @@ def calculate_visit_metrics(rows: list[dict]) -> dict:
 
 
 def show_public_retention_metrics() -> None:
+    if not analytics_enabled():
+        st.warning(
+            "방문 통계 DB가 연결되지 않아 방문 기록을 장기간 저장할 수 없습니다. "
+            "Streamlit 앱 Secrets에 Supabase URL과 서버 전용 Secret Key를 설정해 주세요."
+        )
+        return
+
     try:
-        rows = fetch_public_visits() if analytics_enabled() else fetch_local_visits()
+        rows = fetch_public_visits()
         metrics = calculate_visit_metrics(rows)
     except Exception:
-        metrics = calculate_visit_metrics(fetch_local_visits())
+        st.warning(
+            "방문 통계 DB에 연결하지 못했습니다. 이번 방문은 아직 저장되지 않았으며, "
+            "연결이 복구되면 현재 브라우저 세션에서 다시 저장을 시도합니다."
+        )
+        return
+
     total_users = int(metrics.get("total_users", 0) or 0)
     total_visits = int(metrics.get("total_visits", 0) or 0)
     returning_users = int(metrics.get("returning_users", 0) or 0)
@@ -1149,7 +1131,12 @@ def show_public_retention_metrics() -> None:
     second.metric("전체 방문 횟수", f"{total_visits}회")
     third.metric("재방문자", f"{returning_users}명")
     fourth.metric("리텐션", f"{retention:.1f}%")
-    st.caption("익명 브라우저 기준 · 같은 브라우저의 두 번째 접속부터 재방문으로 계산합니다.")
+    st.caption("익명 브라우저 기준 · 같은 브라우저의 새 접속 세션마다 방문 1회로 기록합니다.")
+
+    if not st.session_state.get("public_visit_database_saved", False):
+        error = st.session_state.get("public_visit_database_error")
+        if error:
+            st.warning(error)
 
 
 def parse_created_at(value: str):
