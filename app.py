@@ -17,6 +17,7 @@ from streamlit_cookies_controller import CookieController
 
 from preview_logic import (
     BRANDS,
+    calculate_visit_metrics,
     analysis_message,
     enhance_features_from_text,
     extract_age,
@@ -1034,17 +1035,14 @@ def fetch_analytics_summary() -> dict:
 
 
 def record_public_visit() -> None:
-    """Record exactly one idempotent visit for this browser session."""
+    """Record one visit per browser session with an idempotent event ID."""
     if st.session_state.get("public_visit_recorded"):
         return
-
     event_id = st.session_state.setdefault("public_visit_event_id", str(uuid.uuid4()))
     user_id = get_anonymous_user_id()
 
     if analytics_enabled():
         try:
-            # Import earlier local visits once, preserving their original IDs
-            # and timestamps so deployment does not silently discard history.
             if not st.session_state.get("public_visits_migrated"):
                 migrate_local_visits_to_supabase()
                 st.session_state["public_visits_migrated"] = True
@@ -1057,12 +1055,12 @@ def record_public_visit() -> None:
             st.session_state.pop("public_visit_database_error", None)
         else:
             st.session_state["public_visit_database_error"] = (
-                "방문 DB 저장을 완료하지 못했습니다. 연결을 확인한 뒤 다시 시도합니다."
+                "방문 DB 저장에 실패했습니다. 연결이 복구되면 다시 저장합니다."
             )
         return
 
-    # Keep the old visible counters while the permanent database is not yet
-    # configured. This local fallback is not durable across server rebuilds.
+    # Preserve the working counters until permanent database credentials exist.
+    # This fallback can reset when the Streamlit server is rebuilt.
     saved = record_local_visit(user_id, event_id)
     st.session_state["public_visit_database_saved"] = saved
     if saved:
@@ -1158,79 +1156,106 @@ def fetch_public_visit_summary() -> dict:
     }
 
 
-def fetch_public_visits() -> list[dict]:
-    response = requests.get(
-        get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/cluesight_events",
+def migrate_local_visits_to_supabase() -> None:
+    """Copy the previous local ledger once the permanent database is configured."""
+    with local_analytics_connection() as connection:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS local_analytics_migrations "
+            "(migration_key TEXT PRIMARY KEY, completed_at TEXT NOT NULL)"
+        )
+        done = connection.execute(
+            "SELECT 1 FROM local_analytics_migrations WHERE migration_key = 'supabase_visits_v1'"
+        ).fetchone()
+        if done:
+            return
+
+    rows = fetch_local_visits()
+    endpoint = get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/cluesight_visits"
+    for offset in range(0, len(rows), 250):
+        response = requests.post(
+            endpoint,
+            headers={**supabase_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+            params={"on_conflict": "event_id"},
+            json=rows[offset:offset + 250],
+            timeout=15,
+        )
+        response.raise_for_status()
+
+    with local_analytics_connection() as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO local_analytics_migrations(migration_key, completed_at) "
+            "VALUES ('supabase_visits_v1', ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+
+
+def log_public_visit(user_id: str, event_id: str) -> bool:
+    if not analytics_enabled():
+        return False
+    try:
+        response = requests.post(
+            get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/cluesight_visits",
+            headers={**supabase_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+            params={"on_conflict": "event_id"},
+            json={"event_id": event_id, "user_id": user_id},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+
+def fetch_public_visit_summary() -> dict:
+    response = requests.post(
+        get_secret("SUPABASE_URL").rstrip("/") + "/rest/v1/rpc/cluesight_visit_summary",
         headers=supabase_headers(),
-        params={
-            "select": "event_id,user_id,created_at",
-            "event_type": "eq.image_generated",
-            "verification_pass": "eq.false",
-            "verification_score": "eq.0",
-            "attempts": "eq.1",
-            "mode": "eq.빠른 생성",
-            "first_image_seconds": "eq.0",
-            "total_seconds": "eq.0",
-            "order": "created_at.asc",
-        },
+        json={},
         timeout=10,
     )
     response.raise_for_status()
-    rows = response.json()
-    if not isinstance(rows, list):
-        raise ValueError("Invalid visit analytics response")
-    return rows
-
-
-def calculate_visit_metrics(rows: list[dict]) -> dict:
-    visit_counts: dict[str, int] = {}
-    for row in rows:
-        user_id = str(row.get("user_id") or "").strip()
-        if user_id:
-            visit_counts[user_id] = visit_counts.get(user_id, 0) + 1
-    total_users = len(visit_counts)
-    returning_users = sum(1 for count in visit_counts.values() if count >= 2)
+    result = response.json()
+    required = {"total_users", "total_visits", "returning_users", "retention"}
+    if not isinstance(result, dict) or not required.issubset(result):
+        raise ValueError("Invalid all-time visit summary")
     return {
-        "total_users": total_users,
-        "total_visits": sum(visit_counts.values()),
-        "returning_users": returning_users,
-        "retention": 100.0 * returning_users / total_users if total_users else 0.0,
+        "total_users": int(result["total_users"]),
+        "total_visits": int(result["total_visits"]),
+        "returning_users": int(result["returning_users"]),
+        "retention": float(result["retention"]),
     }
 
 
+
 def show_public_retention_metrics() -> None:
-    source_label = "임시 서버 저장소"
     status_message = ""
+    source_label = "임시 서버 저장소"
     if analytics_enabled():
         try:
             metrics = fetch_public_visit_summary()
             st.session_state["public_retention_metrics_cache"] = metrics
-            source_label = "영구 방문 DB · 전체 누적"
+            source_label = "영구 방문 DB · 날짜 제한 없는 전체 누적"
         except Exception:
             metrics = st.session_state.get("public_retention_metrics_cache")
             if metrics is None:
                 metrics = calculate_visit_metrics(fetch_local_visits())
             status_message = (
-                "영구 방문 DB를 읽지 못해 현재 서버 임시 저장값을 표시합니다. "
-                "Supabase에서 supabase_setup.sql이 실행됐는지 확인해 주세요."
+                "영구 DB를 읽지 못해 임시 서버 저장값을 표시합니다. "
+                "Supabase에서 supabase_setup.sql이 적용됐는지 확인해 주세요."
             )
     else:
         metrics = calculate_visit_metrics(fetch_local_visits())
         status_message = (
-            "현재는 서버 임시 저장소를 사용 중입니다. Supabase DB 설정 후에는 "
-            "앱 재시작·재배포 뒤에도 전체 방문 기록이 유지됩니다."
+            "현재는 서버 임시 저장소에 기록 중입니다. 영구 누적을 위해 Supabase SQL 설정과 "
+            "Streamlit Secrets 연결이 필요합니다."
         )
 
-    total_users = int(metrics.get("total_users", 0) or 0)
-    total_visits = int(metrics.get("total_visits", 0) or 0)
-    returning_users = int(metrics.get("returning_users", 0) or 0)
-    retention = float(metrics.get("retention", 0.0) or 0.0)
     first, second, third, fourth = st.columns(4)
-    first.metric("누적 방문자", f"{total_users}명")
-    second.metric("전체 방문 횟수", f"{total_visits}회")
-    third.metric("재방문자", f"{returning_users}명")
-    fourth.metric("리텐션", f"{retention:.1f}%")
-    st.caption(f"익명 브라우저 기준 · {source_label} · 새 접속 세션마다 방문 1회 기록")
+    first.metric("누적 방문자", f"{int(metrics.get('total_users', 0) or 0)}명")
+    second.metric("전체 방문 횟수", f"{int(metrics.get('total_visits', 0) or 0)}회")
+    third.metric("재방문자", f"{int(metrics.get('returning_users', 0) or 0)}명")
+    fourth.metric("리텐션", f"{float(metrics.get('retention', 0.0) or 0.0):.1f}%")
+    st.caption(f"익명 브라우저 기준 · {source_label} · 새 접속 세션마다 1회 기록")
     if status_message:
         st.warning(status_message)
     if st.session_state.get("public_visit_database_error"):
