@@ -1,33 +1,22 @@
-# ClueSight 전체 통계 연결
+# ClueSight 전체 방문 기록과 분석
 
-설정 전 통계는 비활성화됩니다. 기존 analytics_events는 읽거나 변경하지 않습니다.
+영구 방문 통계는 Supabase의 `cluesight_visits` 테이블을 사용합니다. 방문 행에는 익명 브라우저 UUID와 접속 시각만 저장합니다. 재난문자 원문, 이름, 위치, 이미지, IP 주소는 저장하지 않습니다.
 
-1. 사용할 Supabase 프로젝트 SQL Editor에서 supabase_setup.sql을 실행합니다.
-2. 해당 Streamlit 앱의 Manage app → Settings → Secrets에 아래 항목을 추가합니다.
-   기존 Cloudflare 설정은 유지합니다. 실제 값은 GitHub나 대화에 붙여 넣지 마세요.
+1. 사용할 Supabase 프로젝트의 SQL Editor에서 저장소의 `supabase_setup.sql` 전체를 실행합니다. 이 스크립트는 방문 테이블과 전체 누적 집계 RPC를 만들고, 기존 방문 표시 행을 새 테이블로 복사합니다. 이전 행은 삭제하지 않습니다. 생성/방문 지표를 분리해 방문 기록이 생성 수에 섞이지 않게 합니다.
+
+2. Streamlit 앱에서 **Manage app → Settings → Secrets**에 다음을 설정합니다. 기존 Cloudflare 설정은 유지하세요. 실제 값을 GitHub나 채팅에 올리지 마세요.
 
 ```toml
-CLUESIGHT_ANALYTICS_ENABLED = "true"
 SUPABASE_URL = "https://YOUR_PROJECT.supabase.co"
 SUPABASE_SECRET_KEY = "YOUR_SERVER_SECRET_KEY"
 ADMIN_PASSWORD = "YOUR_PRIVATE_ADMIN_PASSWORD"
 ```
 
-서버 전용 sb_secret_… 또는 legacy service_role 키를 사용합니다. anon/publishable 키는
-사용하지 않습니다. 일반 SUPABASE_KEY는 다른 환경에 잘못 연결하지 않도록 읽지 않습니다.
+서버 전용 `sb_secret_…` 또는 기존 `service_role` 키를 사용하고 anon/publishable 키는 사용하지 않습니다. `SUPABASE_SECRET_KEY`는 브라우저로 전달되지 않습니다.
 
-3. 앱을 열어 상단 방문 통계가 표시되는지 확인합니다. 새 브라우저 접속 세션마다 전체 방문 횟수가 1 증가하고, 이미지 생성은 방문 수에 포함되지 않습니다. 같은 Streamlit 세션의 화면 재실행은 중복 기록되지 않습니다. 관리자 통계에서 이미지 생성 수는 별도로 확인합니다.
-4. 다른 브라우저의 생성은 생성 브라우저 수를 늘립니다. 다른 한국 날짜에 다시 생성하면
-   재방문 수가 늘어납니다. 연결 실패 시 0으로 가장하지 않고 오류를 표시합니다.
+3. 앱을 연 새 접속 세션마다 방문 행을 하나 기록합니다. 같은 세션의 화면 재실행은 같은 이벤트 ID로 중복 저장되지 않습니다. 브라우저를 다시 열면 재방문으로 기록됩니다. 날짜 필터나 REST 페이지 제한 없이 DB에서 전체 행을 집계하므로 누적값은 날짜가 바뀌어도 초기화되지 않습니다.
 
-집계 단위는 결과 1건(최대 3회 생성 포함)입니다. 검수 실패도 이미지 결과를 받으면 완료입니다.
-생성 자체 실패는 집계하지 않습니다. 원문·이름·장소·이미지·IP는 저장하지 않고 익명 UUID,
-시간, 모드, 시도 횟수, 자동 검수 결과만 저장합니다. 익명 브라우저 수는 실제 사람 수가 아닙니다.
-쿠키 삭제·시크릿 모드·다른 기기는 별도입니다. 개인 완료 횟수는 쿠키 기반 참고값입니다.
+4. 사이트 상단에서 누적 방문자, 전체 방문 횟수, 재방문자, 리텐션을 확인합니다. Supabase가 설정되기 전에는 기존처럼 서버 임시 저장소의 값을 표시하며, 재배포나 서버 재시작 후에는 그 값이 초기화될 수 있습니다. SQL과 Secrets 설정이 끝나면 앱이 이전 임시 방문 기록(남아 있는 경우)을 영구 DB로 한 번 복사하고, 이후 기록은 Supabase에 저장합니다. DB 오류가 있으면 현재 표시값과 오류 안내를 함께 보여줍니다.
 
-누적 집계는 SQL에서 수행하므로 10,000건 제한이 없습니다. RLS를 켜고 anon/authenticated
-역할의 읽기·쓰기·집계 함수 실행을 차단합니다. 저장 장애는 이미지 기능을 중단시키지 않고
-해당 결과에 저장 실패를 표시합니다. 설정 이전 사용량은 소급 복원할 수 없습니다.
-방문 통계도 같은 Supabase 연결을 사용합니다. Supabase가 연결되지 않으면 기존 동작처럼 Streamlit 서버의 임시 SQLite 저장소로 기록해 네 가지 지표를 계속 표시합니다. 이 임시 기록은 앱 서버가 재시작되거나 재배포되면 초기화될 수 있습니다. 재배포 후에도 누적 방문 기록을 유지하려면 Streamlit 앱 Secrets에 Supabase 서버 키를 등록해야 합니다. 끄려면 CLUESIGHT_ANALYTICS_ENABLED를 "false"로 변경합니다.
+누적 방문자와 재방문자는 익명 브라우저 UUID 기준이며 실제 사람 수와 다를 수 있습니다. 쿠키 삭제, 시크릿 모드, 다른 브라우저·기기는 각각 별도 브라우저로 계산됩니다. 리텐션은 전체 누적 방문 중 2회 이상 방문한 브라우저의 비율입니다.
 
-참고: https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys
